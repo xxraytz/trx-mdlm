@@ -67,13 +67,13 @@ trainer:
   devices: ${device_count:}
   accumulate_grad_batches: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${loader.batch_size} * ${trainer.num_nodes}}}
   gradient_clip_val: 1.0
-  precision: 'bf16'
+  precision: '32-true'
   num_sanity_val_steps: 2
   max_steps: 1_000_000
   log_every_n_steps: 10
   limit_train_batches: 1.0   # train on full dataset, can be used to toggle quick run
   limit_val_batches: 1.0     # validate on full dataset, can be used to toggle quick run
-  val_check_interval: 10000
+  val_check_interval: 100
 
 wandb:
   project: text-diffusion
