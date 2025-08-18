@@ -1,8 +1,10 @@
 import math
 import typing
 
-import flash_attn
-import flash_attn.layers.rotary
+# import flash_attn
+# import flash_attn.layers.rotary
+from torch.nn.attention import sdpa_kernel, SDPBackend
+
 import huggingface_hub
 import omegaconf
 import torch
@@ -104,15 +106,19 @@ class Rotary(torch.nn.Module):
     return self.cos_cached, self.sin_cached
 
 
-def rotate_half(x):
-  x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-  return torch.cat((-x2, x1), dim=-1)
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
 
-
-def apply_rotary_pos_emb(qkv, cos, sin):
-  cos = cos[0,:,0,0,:cos.shape[-1]//2]
-  sin = sin[0,:,0,0,:sin.shape[-1]//2]
-  return flash_attn.layers.rotary.apply_rotary_emb_qkv_(qkv, cos, sin)
+def apply_rotary_qk(q, k, cos_cached, sin_cached):
+    # извлекаем cos/sin так же, как делали раньше
+    cos = cos_cached[0, :, 0, 0, :cos_cached.shape[-1] // 2].to(q.dtype)
+    sin = sin_cached[0, :, 0, 0, :sin_cached.shape[-1] // 2].to(q.dtype)
+    cos = torch.cat([cos, cos], dim=-1).unsqueeze(0).unsqueeze(2)  # (1,S,1,D)
+    sin = torch.cat([sin, sin], dim=-1).unsqueeze(0).unsqueeze(2)
+    q = q * cos + _rotate_half(q) * sin
+    k = k * cos + _rotate_half(k) * sin
+    return q, k
 
 
 # function overload
@@ -129,7 +135,7 @@ class LayerNorm(nn.Module):
     self.weight = nn.Parameter(torch.ones([dim]))
     self.dim = dim
   def forward(self, x):
-    with torch.cuda.amp.autocast(enabled=False):
+    with torch.autocast(device_type='cuda', enabled=False):
       x = F.layer_norm(x.float(), [self.dim])
     return x * self.weight[None,None,:]
 
@@ -253,26 +259,24 @@ class DDiTBlock(nn.Module):
     x_skip = x
     x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
 
-    qkv = self.attn_qkv(x)
-    qkv = rearrange(qkv,
-                    'b s (three h d) -> b s three h d',
-                    three=3,
-                    h=self.n_heads)
-    with torch.cuda.amp.autocast(enabled=False):
-      cos, sin = rotary_cos_sin
-      qkv = apply_rotary_pos_emb(
-        qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
-    qkv = rearrange(qkv, 'b s ... -> (b s) ...')
-    if seqlens is None:
-      cu_seqlens = torch.arange(
-        0, (batch_size + 1) * seq_len, step=seq_len,
-        dtype=torch.int32, device=qkv.device)
-    else:
-      cu_seqlens = seqlens.cumsum(-1)
-    x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(
-      qkv, cu_seqlens, seq_len, 0., causal=False)
-    
-    x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
+    qkv = self.attn_qkv(x)  # (B,S,3H*D)
+    qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+    q, k, v = qkv.unbind(dim=2)  # (B,S,H,D) каждое
+
+    cos_cached, sin_cached = rotary_cos_sin
+    with torch.autocast(device_type='cuda', enabled=False):
+        q, k = apply_rotary_qk(q, k, cos_cached, sin_cached)
+
+    # SDPA ждёт (B,H,S,D)
+    q = rearrange(q, 'b s h d -> b h s d')
+    k = rearrange(k, 'b s h d -> b h s d')
+    v = rearrange(v, 'b s h d -> b h s d')
+
+    # Насильно "обычный" attention (без flash/mem-efficient)
+    with sdpa_kernel(SDPBackend.MATH):
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
+    x = rearrange(y, 'b h s d -> b s (h d)')
+
 
     x = bias_dropout_scale_fn(self.attn_out(x),
                               None,
@@ -362,7 +366,7 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
 
     rotary_cos_sin = self.rotary_emb(x)
 
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=torch.float32):
       for i in range(len(self.blocks)):
         x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
       x = self.output_layer(x, c)
