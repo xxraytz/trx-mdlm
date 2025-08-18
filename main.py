@@ -165,34 +165,9 @@ def _train(config, logger, tokenizer):
     if "callbacks" in config:
         for _, callback in config.callbacks.items():
             callbacks.append(hydra.utils.instantiate(callback))
-    # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    breakpoint()
-    import sys
-    import pathlib
-    import importlib
 
-    REPO = (pathlib.Path(__file__).resolve().parent / ".." / "transaction-generation").resolve()
-
-    if str(REPO) not in sys.path:
-        sys.path.insert(0, str(REPO))
-        importlib.invalidate_caches()
-
-    import yaml
-
-    from generation.runners.utils import DataConfig
-    from generation.data.utils import get_dataloaders
-
-    path_to_config = "/home/dev/2025/mdlm/trx_config.yaml"
-    dataloader_conf = DataConfig(**yaml.safe_load(open(path_to_config)))
-    common_seed = 0
-
-    (train_ds, valid_ds, test_ds), (internal_dataconf, data_conf) = (
-        get_dataloaders(dataloader_conf, common_seed)
-    )
-
-    # train_ds, valid_ds = dataloader.get_dataloaders(config, tokenizer)
-    # _print_batch(train_ds, valid_ds, tokenizer)
-    # -------------------------------------------------------changed by @xxraytz
+    train_ds, valid_ds = dataloader.get_dataloaders(config, tokenizer)
+    _print_batch(train_ds, valid_ds, tokenizer)
 
     model = diffusion.Diffusion(config, tokenizer=valid_ds.tokenizer)
 
