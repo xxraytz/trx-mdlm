@@ -1,0 +1,80 @@
+dataset_name: mbd
+train_path: /home/dev/2025/transaction-generation/data/mbd-50k/train
+test_path: /home/dev/2025/transaction-generation/data/mbd-50k/test
+batch_size: 8
+num_workers: 4
+val_ratio: 0.15
+train_resamples: 1
+max_seq_len: 256
+min_history_len: 32
+generation_len: 32
+train_random_end: time
+val_random_end: time
+time_name: days_since_first_tx
+cat_cardinalities:
+  src_type32: 88
+  src_type11: 47
+  event_subtype: 60
+  dst_type11: 58
+  event_type: 55
+  currency: 13
+  dst_type12: 253
+  src_type22: 84
+  src_type12: 188
+num_names:
+- amount
+index_name: client_id
+loader_transforms: null
+train_transforms:
+  '0':
+    RescaleTime:
+      loc: 0.0
+      scale: 365.0
+  '1':
+    TimeToDiff:
+      disable: true
+  ngrams:
+    NGramTransform:
+      model_path: data/mbd-50k/ngrams-mapper-32.pt
+      feature_name: event_type
+      feature_counts: 55
+      max_l: 1045
+      disable: true
+  log_tfs:
+    Logarithm:
+      names:
+      - amount
+  local_shuffle:
+    LocalShuffle:
+      max_shift: 0
+  '3':
+    CutTargetSequence:
+      target_len: 32
+
+val_transforms:
+  '0':
+    RescaleTime:
+      loc: 0.0
+      scale: 365.0
+  '1':
+    TimeToDiff:
+      disable: false
+  log_tfs:
+    Logarithm:
+      names:
+      - amount
+  '3':
+    CutTargetSequence:
+      target_len: 32
+  ngrams:
+    NGramTransform:
+      model_path: data/mbd-50k/ngrams-mapper-32.pt
+      feature_name: event_type
+      feature_counts: 55
+      max_l: 1045
+      disable: true
+padding_value: 0.0
+focus_on:
+- event_type
+drop_nonfocus: false
+target_token: event_type

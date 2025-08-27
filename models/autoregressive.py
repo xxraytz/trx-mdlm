@@ -342,7 +342,7 @@ class AR(DDIT):
 
     rotary_cos_sin = self.rotary_emb(x)
 
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.cuda.amp.autocast(dtype=torch.float16):
       for i in range(len(self.blocks)):
         x = self.blocks[i](
           x, rotary_cos_sin, None, seqlens=None

@@ -62,37 +62,32 @@ class Perplexity(NLL):
 
 
 class Diffusion(L.LightningModule):
-    def __init__(self, config, tokenizer: transformers.PreTrainedTokenizer):
+    def __init__(
+        self,
+        configs,
+    ):
         super().__init__()
-        self.save_hyperparameters()
-        self.config = config
 
-        self.tokenizer = tokenizer
-        self.vocab_size = self.tokenizer.vocab_size
+        self.save_hyperparameters()
+        config, data_conf, internal_dataconf = configs
+        
+        self.config = config
+        self.data_conf = data_conf
+        self.vocab_size = data_conf.cat_cardinalities[data_conf.target_token]
         self.sampler = self.config.sampling.predictor
-        self.gen_ppl_eval_model_name_or_path = (
-            self.config.eval.gen_ppl_eval_model_name_or_path
-        )
+
         self.antithetic_sampling = self.config.training.antithetic_sampling
         self.importance_sampling = self.config.training.importance_sampling
         self.change_of_variables = self.config.training.change_of_variables
-        if (
-            not hasattr(self.tokenizer, "mask_token")
-            or self.tokenizer.mask_token is None
-        ):
-            self.mask_index = self.vocab_size
-            self.vocab_size += 1
-        else:
-            self.mask_index = self.tokenizer.mask_token_id
+
+        self.mask_index = self.vocab_size
+        self.vocab_size += 1
+
         self.parameterization = self.config.parameterization
         if self.config.backbone == "dit":
             self.backbone = models.dit.DIT(self.config, vocab_size=self.vocab_size)
         elif self.config.backbone == "dimamba":
-            self.backbone = models.dimamba.DiMamba(
-                self.config,
-                vocab_size=self.vocab_size,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
+            raise ValueError('Mamba doesn\'t supported')
         elif self.config.backbone == "ar":
             self.backbone = models.autoregressive.AR(
                 self.config, vocab_size=self.vocab_size, mask_index=self.mask_index
@@ -113,24 +108,12 @@ class Diffusion(L.LightningModule):
             {
                 "nll": NLL(),
                 "bpd": BPD(),
-                "ppl": Perplexity(),
             }
         )
         metrics.set_dtype(torch.float64)
         self.train_metrics = metrics.clone(prefix="train/")
         self.valid_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
-
-        # generative perplexity
-        self.gen_ppl_metric = Perplexity()
-        self.eval_model_tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.gen_ppl_eval_model_name_or_path
-        )
-        if self.eval_model_tokenizer.pad_token is None:
-            self.eval_model_tokenizer.pad_token = self.eval_model_tokenizer.eos_token
-            self.eval_model_tokenizer.pad_token_id = (
-                self.eval_model_tokenizer.eos_token_id
-            )
 
         self.noise = noise_schedule.get_noise(self.config, dtype=self.dtype)
         if self.config.training.ema > 0:
@@ -224,47 +207,6 @@ class Diffusion(L.LightningModule):
     def on_train_start(self):
         if self.ema:
             self.ema.move_shadow_params_to_device(self.device)
-        # Adapted from:
-        # https://github.com/Dao-AILab/flash-attention/blob/main/training/src/datamodules/language_modeling_hf.py
-        distributed = (
-            self.trainer._accelerator_connector.use_distributed_sampler
-            and self.trainer._accelerator_connector.is_distributed
-        )
-        if distributed:
-            sampler_cls = dataloader.FaultTolerantDistributedSampler
-        else:
-            sampler_cls = dataloader.RandomFaultTolerantSampler
-        updated_dls = []
-        for dl in self.trainer.fit_loop._combined_loader.flattened:
-            if hasattr(dl.sampler, "shuffle"):
-                dl_sampler = sampler_cls(dl.dataset, shuffle=dl.sampler.shuffle)
-            else:
-                dl_sampler = sampler_cls(dl.dataset)
-            if (
-                distributed
-                and self.fast_forward_epochs is not None
-                and self.fast_forward_batches is not None
-            ):
-                dl_sampler.load_state_dict(
-                    {
-                        "epoch": self.fast_forward_epochs,
-                        "counter": (
-                            self.fast_forward_batches * self.config.loader.batch_size
-                        ),
-                    }
-                )
-            updated_dls.append(
-                torch.utils.data.DataLoader(
-                    dl.dataset,
-                    batch_size=self.config.loader.batch_size,
-                    num_workers=self.config.loader.num_workers,
-                    pin_memory=self.config.loader.pin_memory,
-                    sampler=dl_sampler,
-                    shuffle=False,
-                    persistent_workers=True,
-                )
-            )
-        self.trainer.fit_loop._combined_loader.flattened = updated_dls
 
     def optimizer_step(self, *args, **kwargs):
         super().optimizer_step(*args, **kwargs)
@@ -326,7 +268,7 @@ class Diffusion(L.LightningModule):
     def forward(self, x, sigma):
         """Returns log score."""
         sigma = self._process_sigma(sigma)
-        with torch.autocast(device_type="cuda", dtype=torch.float32):
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
             logits = self.backbone(x, sigma)
 
         if self.parameterization == "subs":
@@ -395,14 +337,15 @@ class Diffusion(L.LightningModule):
         self.noise.train()
 
     def training_step(self, batch, batch_idx):
-        breakpoint()
         loss = self._compute_loss(batch, prefix="train")
         self.log(
             name="trainer/loss",
             value=loss.item(),
             on_step=True,
+            prog_bar=True,
             on_epoch=False,
             sync_dist=True,
+            logger=True
         )
         return loss
 
@@ -432,31 +375,17 @@ class Diffusion(L.LightningModule):
             and not self.parameterization == "ar"
         ):
             # TODO(justin): implement sampling and kv cache for AR
-            samples, text_samples = None, None
+            samples = None
             for _ in range(self.config.sampling.num_sample_batches):
-                samples = self._sample()
+                ...
+                # samples = self._sample()
+                # TODO: If we need some metrics they might be called here
+
                 # Decode the samples to be re-tokenized by eval model
-                text_samples = self.tokenizer.batch_decode(samples)
-                if self.config.eval.compute_generative_perplexity:
-                    self.compute_generative_perplexity(text_samples)
-            if self.trainer.global_rank == 0 and hasattr(
-                self.trainer.logger, "log_table"
-            ):
-                # Log the last generated samples
-                text_samples = text_samples[: self.config.sampling.num_sample_log]
-                self.trainer.logger.log_table(
-                    key=f"samples@global_step{self.global_step}",
-                    columns=["Generated Samples"],
-                    data=[[s] for s in text_samples],
-                )
-            if self.config.eval.compute_generative_perplexity:
-                self.log(
-                    "val/gen_ppl",
-                    self.gen_ppl_metric,
-                    on_epoch=True,
-                    on_step=False,
-                    sync_dist=True,
-                )
+                # text_samples = self.tokenizer.batch_decode(samples)
+
+                # if self.config.eval.compute_generative_perplexity:
+                    # self.compute_generative_perplexity(text_samples)
         if self.ema:
             self.ema.restore(
                 itertools.chain(self.backbone.parameters(), self.noise.parameters())
@@ -485,107 +414,6 @@ class Diffusion(L.LightningModule):
             "name": "trainer/lr",
         }
         return [optimizer], [scheduler_dict]
-
-    @torch.no_grad()
-    def eval_retokenize(self, text_samples, max_length):
-        """Retokenizes samples for the eval model.
-
-        Args:
-            text_samples: List of sentences generated by the model.
-        Returns:
-            samples: Samples re-tokenized for the eval model
-            attn_mask: Attention mask for the eval model
-            eval_context_size: Size of the context for the eval model
-        """
-        if "llama2" in self.gen_ppl_eval_model_name_or_path:
-            tokenizer_kwargs = {
-                "text_samples": text_samples,
-                "return_tensors": "pt",
-                "return_token_type_ids": False,
-                "return_attention_mask": True,
-                "truncation": True,
-                "padding": True,
-                "max_length": max_length,
-            }
-            eval_context_size = 4096
-        else:
-            tokenizer_kwargs = {
-                "return_tensors": "pt",
-                "return_token_type_ids": False,
-                "return_attention_mask": True,
-                "truncation": True,
-                "padding": True,
-                "max_length": max_length,
-            }
-            eval_context_size = 1024
-        samples = self.eval_model_tokenizer(text_samples, **tokenizer_kwargs)
-        attn_mask = samples["attention_mask"]
-        samples = samples["input_ids"]
-        if "llama2" not in self.gen_ppl_eval_model_name_or_path:
-            attn_mask = attn_mask.to(self.device)
-            samples = samples.to(self.device)
-        return samples, attn_mask, eval_context_size
-
-    @torch.no_grad()
-    def compute_generative_perplexity(
-        self,
-        text_samples: typing.List[str],
-        retokenize: bool = True,
-        max_length: typing.Optional[int] = None,
-    ) -> None:
-        """Compute the generative perplexity of the model.
-
-        Args:
-            text_samples: List of sentences generated by the model.
-
-        Returns:
-            Perplexity of the generated text under a different
-            pre-trained AR model (e.g., GPT2).
-        """
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        eval_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.gen_ppl_eval_model_name_or_path
-        ).eval()
-        if max_length is None:
-            max_length = self.config.model.length
-        if "llama2" not in self.gen_ppl_eval_model_name_or_path:
-            eval_model = eval_model.to(self.device)
-        # Re-tokenize using eval model's tokenizer
-        if retokenize:
-            (samples, attn_mask, eval_context_size) = self.eval_retokenize(
-                text_samples, max_length=max_length
-            )
-        else:
-            samples = text_samples
-            attn_mask = torch.ones(samples.shape).to(self.device)
-            eval_context_size = samples.shape[-1]
-        batch_size = min(self.config.eval.perplexity_batch_size, samples.shape[0])
-        num_batches = samples.shape[0] // batch_size
-        for i in range(num_batches):
-            _samples = torch.split(
-                samples[i * batch_size : (i + 1) * batch_size],
-                eval_context_size,
-                dim=-1,
-            )
-            _attn_mask = torch.split(
-                attn_mask[i * batch_size : (i + 1) * batch_size],
-                eval_context_size,
-                dim=-1,
-            )
-            for sample_chunk, attn_mask_chunk in zip(_samples, _attn_mask):
-                logits = eval_model(sample_chunk, attention_mask=attn_mask_chunk)[0]
-                logits = logits.transpose(-1, -2)
-
-                nlls = F.cross_entropy(
-                    logits[..., :-1], sample_chunk[..., 1:], reduction="none"
-                )
-                first_eos = (
-                    sample_chunk == self.eval_model_tokenizer.eos_token_id
-                ).cumsum(-1) == 1
-                token_mask = sample_chunk != self.eval_model_tokenizer.eos_token_id
-                self.gen_ppl_metric.update(
-                    nlls, first_eos[..., 1:] + token_mask[..., 1:]
-                )
 
     def q_xt(self, x, move_chance):
         """Computes the noisy sample xt.
@@ -653,6 +481,7 @@ class Diffusion(L.LightningModule):
         return copy_flag * x + (1 - copy_flag) * _x
 
     def _ar_sampler(self, bsz):
+        breakpoint() # Check bos_token_id?????
         # precompute token buffer
         num_pred_tokens = self.config.model.length - 1
         x = torch.zeros(
@@ -830,12 +659,14 @@ class Diffusion(L.LightningModule):
             input_tokens = x0[:, start:end]
             output_tokens = x0[:, start + 1 : end + 1]
             new_attention_mask = attention_mask[:, start:end]
-
+            breakpoint() # Check bos_token_id?????
             # Helps with validation PPL, since the val
             # examples will all start and end with BOS/EOS
             input_tokens[:, 0] = self.tokenizer.bos_token_id
             output_tokens[:, -1] = self.tokenizer.eos_token_id
         elif self.parameterization == "ar":
+            breakpoint() # Check bos_token_id?????
+
             input_tokens = x0[:, :-1]
             output_tokens = x0[:, 1:]
             new_attention_mask = attention_mask[:, 1:]
@@ -1015,6 +846,7 @@ class Diffusion(L.LightningModule):
 
         intermediate_tokens.append(target.cpu().numpy())
         intermediate_text_samples = []
+        breakpoint() # Check here eos_token_id. And also batch decode!
         sequence_lengths = (
             (
                 np.concatenate(intermediate_tokens, axis=1)[:, 1:]

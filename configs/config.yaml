@@ -12,13 +12,13 @@ diffusion: absorbing_state
 backbone: dit  # dit / dimamba / ar
 parameterization: subs  # subs / d3pm / sedd
 time_conditioning: False
-T: 0  # 0 (continuous time) / 1000 
+T: 0  # 0 (continuous time) / 1000
 subs_masking: False
 
 seed: 1
 
 loader:
-  global_batch_size: 512
+  global_batch_size: 8
   eval_global_batch_size: ${.global_batch_size}
   # Note: batch_size and eval_batch_size are **per machine**
   batch_size: ${div_up:${.global_batch_size}, ${eval:${trainer.devices} * ${trainer.num_nodes}}}
@@ -50,12 +50,12 @@ eval:
   compute_generative_perplexity: False
   perplexity_batch_size: 8
   compute_perplexity_on_sanity: False
-  gen_ppl_eval_model_name_or_path: gpt2-large  # gpt2-large, meta-llama/Llama-2-7b-hf
+  gen_ppl_eval_model_name_or_path: null  # gpt2-large, meta-llama/Llama-2-7b-hf
   generate_samples: True
 
 optim:
   weight_decay: 0
-  lr: 3e-4
+  lr: 1e-4
   beta1: 0.9
   beta2: 0.999
   eps: 1e-8
@@ -65,7 +65,8 @@ trainer:
   accelerator: cuda
   num_nodes: 1
   devices: ${device_count:}
-  accumulate_grad_batches: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${loader.batch_size} * ${trainer.num_nodes}}}
+  # accumulate_grad_batches: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${loader.batch_size} * ${trainer.num_nodes}}}
+  accumulate_grad_batches: 4
   gradient_clip_val: 1.0
   precision: '32-true'
   num_sanity_val_steps: 2
@@ -73,7 +74,7 @@ trainer:
   log_every_n_steps: 10
   limit_train_batches: 1.0   # train on full dataset, can be used to toggle quick run
   limit_val_batches: 1.0     # validate on full dataset, can be used to toggle quick run
-  val_check_interval: 100
+  val_check_interval: 500
 
 wandb:
   project: text-diffusion

@@ -1,4 +1,8 @@
 import os
+import sys
+import pathlib
+import importlib
+import yaml
 
 import fsspec
 import hydra
@@ -12,6 +16,20 @@ import dataloader
 import diffusion
 import utils
 
+from dataloader import get_dataloaders
+
+REPO = (
+    pathlib.Path(__file__).resolve().parent / ".." / "transaction-generation"
+).resolve()
+
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+    importlib.invalidate_caches()
+
+
+from generation.runners.utils import DataConfig  # noqa: E402
+
+GEN_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/trx_config.yaml"
 
 omegaconf.OmegaConf.register_new_resolver("cwd", os.getcwd)
 omegaconf.OmegaConf.register_new_resolver("device_count", torch.cuda.device_count)
@@ -137,10 +155,13 @@ def _ppl_eval(config, logger, tokenizer):
         strategy=hydra.utils.instantiate(config.strategy),
         logger=wandb_logger,
     )
-    _, valid_ds = dataloader.get_dataloaders(
-        config, tokenizer, skip_train=True, valid_seed=config.seed
-    )
-    trainer.validate(model, valid_ds)
+
+    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
+    common_seed = 0
+
+    (_, _, test_ds), _ = get_dataloaders(dataloader_conf, common_seed)
+    breakpoint
+    trainer.validate(model, test_ds)
 
 
 def _train(config, logger, tokenizer):
@@ -165,36 +186,15 @@ def _train(config, logger, tokenizer):
     if "callbacks" in config:
         for _, callback in config.callbacks.items():
             callbacks.append(hydra.utils.instantiate(callback))
-    # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    breakpoint()
-    import sys
-    import pathlib
-    import importlib
 
-    REPO = (pathlib.Path(__file__).resolve().parent / ".." / "transaction-generation").resolve()
-
-    if str(REPO) not in sys.path:
-        sys.path.insert(0, str(REPO))
-        importlib.invalidate_caches()
-
-    import yaml
-
-    from generation.runners.utils import DataConfig
-    from generation.data.utils import get_dataloaders
-
-    path_to_config = "/home/dev/2025/mdlm/trx_config.yaml"
-    dataloader_conf = DataConfig(**yaml.safe_load(open(path_to_config)))
+    # Dataloader from transaction generation
+    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
     common_seed = 0
 
-    (train_ds, valid_ds, test_ds), (internal_dataconf, data_conf) = (
-        get_dataloaders(dataloader_conf, common_seed)
+    (train_ds, valid_ds, test_ds), (internal_dataconf, data_conf) = get_dataloaders(
+        dataloader_conf, common_seed
     )
-
-    # train_ds, valid_ds = dataloader.get_dataloaders(config, tokenizer)
-    # _print_batch(train_ds, valid_ds, tokenizer)
-    # -------------------------------------------------------changed by @xxraytz
-
-    model = diffusion.Diffusion(config, tokenizer=valid_ds.tokenizer)
+    model = diffusion.Diffusion(configs=(config, data_conf, internal_dataconf))
 
     trainer = hydra.utils.instantiate(
         config.trainer,

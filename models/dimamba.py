@@ -1130,7 +1130,7 @@ class DiMamba(nn.Module, huggingface_hub.PyTorchModelHubMixin):
     if self.temb_strategy is not None:
       c = F.silu(self.sigma_map(sigma))
 
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.cuda.amp.autocast(dtype=torch.float16):
       x = self.model(indices, time_embeds=c).logits
 
     return x
