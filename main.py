@@ -37,12 +37,12 @@ omegaconf.OmegaConf.register_new_resolver("eval", eval)
 omegaconf.OmegaConf.register_new_resolver("div_up", lambda x, y: (x + y - 1) // y)
 
 
-def _load_from_checkpoint(config, tokenizer):
+def _load_from_checkpoint(config):
     if "hf" in config.backbone:
-        return diffusion.Diffusion(config, tokenizer=tokenizer).to("cuda")
+        return diffusion.Diffusion(config).to("cuda")
 
     return diffusion.Diffusion.load_from_checkpoint(
-        config.eval.checkpoint_path, tokenizer=tokenizer, config=config
+        config.eval.checkpoint_path, config=config
     )
 
 
@@ -131,10 +131,11 @@ def generate_samples(config, logger, tokenizer):
     return text_samples
 
 
-def _ppl_eval(config, logger, tokenizer):
+def _eval(config, logger):
+    breakpoint()
     logger.info("Starting Zero Shot Eval.")
 
-    model = _load_from_checkpoint(config=config, tokenizer=tokenizer)
+    model = _load_from_checkpoint(config=config)
     if config.eval.disable_ema:
         logger.info("Disabling EMA.")
         model.ema = None
@@ -155,16 +156,15 @@ def _ppl_eval(config, logger, tokenizer):
         strategy=hydra.utils.instantiate(config.strategy),
         logger=wandb_logger,
     )
-
     dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
     common_seed = 0
 
     (_, _, test_ds), _ = get_dataloaders(dataloader_conf, common_seed)
-    breakpoint
+    breakpoint()
     trainer.validate(model, test_ds)
 
 
-def _train(config, logger, tokenizer):
+def _train(config, logger, tokenizer=None):
     logger.info("Starting Training.")
     wandb_logger = None
     if config.get("wandb", None) is not None:
@@ -191,7 +191,7 @@ def _train(config, logger, tokenizer):
     dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
     common_seed = 0
 
-    (train_ds, valid_ds, test_ds), (internal_dataconf, data_conf) = get_dataloaders(
+    (train_ds, valid_ds, _), (internal_dataconf, data_conf) = get_dataloaders(
         dataloader_conf, common_seed
     )
     model = diffusion.Diffusion(configs=(config, data_conf, internal_dataconf))
@@ -213,13 +213,12 @@ def main(config):
     _print_config(config, resolve=True, save_cfg=True)
 
     logger = utils.get_logger(__name__)
-    tokenizer = dataloader.get_tokenizer(config)
     if config.mode == "sample_eval":
-        generate_samples(config, logger, tokenizer)
-    elif config.mode == "ppl_eval":
-        _ppl_eval(config, logger, tokenizer)
+        generate_samples(config, logger)
+    elif config.mode == "eval":
+        _eval(config, logger)
     else:
-        _train(config, logger, tokenizer)
+        _train(config, logger)
 
 
 if __name__ == "__main__":
