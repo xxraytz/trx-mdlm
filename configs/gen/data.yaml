@@ -1,8 +1,8 @@
 dataset_name: mbd
 train_path: /home/dev/2025/transaction-generation/data/mbd-50k/train
 test_path: /home/dev/2025/transaction-generation/data/mbd-50k/test
-batch_size: 8
-num_workers: 4
+batch_size: 64
+num_workers: 0
 val_ratio: 0.15
 train_resamples: 1
 max_seq_len: 256
@@ -47,9 +47,6 @@ train_transforms:
   local_shuffle:
     LocalShuffle:
       max_shift: 0
-  '3':
-    CutTargetSequence:
-      target_len: 32
 
 val_transforms:
   '0':
@@ -63,9 +60,7 @@ val_transforms:
     Logarithm:
       names:
       - amount
-  '3':
-    CutTargetSequence:
-      target_len: 32
+
   ngrams:
     NGramTransform:
       model_path: data/mbd-50k/ngrams-mapper-32.pt

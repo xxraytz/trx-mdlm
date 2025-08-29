@@ -377,8 +377,10 @@ class Diffusion(L.LightningModule):
             # TODO(justin): implement sampling and kv cache for AR
             samples = None
             for _ in range(self.config.sampling.num_sample_batches):
+                samples = self._sample()
+                
+                breakpoint()
                 ...
-                # samples = self._sample()
                 # TODO: If we need some metrics they might be called here
 
                 # Decode the samples to be re-tokenized by eval model
@@ -793,8 +795,110 @@ class Diffusion(L.LightningModule):
         return entropy
 
     @torch.no_grad
+    def generate_from_batch(
+        self, 
+        batch,
+        dt: float = 0.001
+    ):
+        x0 = batch['input_ids'].to(self.device).long()
+        attn = batch['attention_mask'].to(self.device).long()
+        B, L = x0.shape
+
+        gen_len = int(self.data_conf.generation_len)
+        lengths = attn.sum(dim=1)
+        assert lengths.max() <= L and lengths.min() > 0
+        hist_len = lengths - gen_len
+
+        idx = torch.arange(L, device=x0.device)[None, :] # TODO: WHAT???
+
+        valid_region = idx < lengths[:, None]
+        history_region = idx < hist_len[:, None]  # TODO: No MISTAKES?
+        target_region = valid_region & (~history_region)
+
+        initial = x0.clone()
+        initial[target_region] = self.mask_index
+
+        locked = (~target_region)
+
+        steps, tokens = self.sample_subs_guidance_for_batch(
+            initial_tokens=initial,
+            stride_length=gen_len,
+            num_strides=0,
+            dt=dt,
+            locked_mask=locked
+        )
+        return steps, tokens
+
+    @torch.no_grad
+    def sample_subs_guidance_for_batch(
+        self, 
+        initial_tokens: torch.LongTensor,
+        stride_length, 
+        num_strides, 
+        dt: float = 0.001, 
+        locked_mask=None,
+    ):
+        assert initial_tokens.ndim == 2, initial_tokens.shape
+        B, L = initial_tokens.shape
+
+        x = initial_tokens.to(self.device, dtype=torch.long).clone()
+        
+        if locked_mask is None:
+            locked_mask = (x != self.mask_index)
+        else:
+            locked_mask = locked_mask.to(self.device, dtype=torch.bool)
+
+        ones = torch.ones(B, dtype=self.dtype, device=self.device)
+
+        num_steps = int(1 / dt)
+        sampling_steps = 0
+        pieces = []
+        target = None
+        for stride_idx in range(num_strides + 1):
+            p_x0_cache = None
+
+            if stride_idx > 0:
+                x[:, :-stride_length] = target
+                locked_mask = torch.zeros_like(x, dtype=torch.bool)
+                locked_mask[:, :-stride_length] = True
+
+            for i in range(num_steps + 1):
+                t = (1.0 - i * dt) * ones
+                p_x0_cache, x_next = self._ddpm_caching_update(
+                    x=x,
+                    t=t,
+                    dt=dt,
+                    p_x0=p_x0_cache,
+                    locked_mask=locked_mask,
+                )
+                if not torch.allclose(x_next, x) or self.time_conditioning:
+                    p_x0_cache = None
+                    sampling_steps += 1
+                x = x_next
+
+            logits = self.forward(x, 0 * ones)
+            x_hat = logits.argmax(dim=-1)
+                
+            # сохраняем залоченные позиции неизменными
+            x = torch.where(locked_mask, x, x_hat) # TODO: Check what is that?
+
+            pieces.append(x[:, :stride_length].detach().cpu().numpy())
+
+            target = x[:, stride_length:]
+
+        pieces.append(target.detach().cpu().numpy())
+        full = np.concatenate(pieces, axis=1)
+        tokens = torch.as_tensor(full, device=self.device, dtype=torch.long)
+        return sampling_steps, tokens
+
+    @torch.no_grad
     def sample_subs_guidance(
-        self, n_samples, stride_length, num_strides, dt=0.001, prefix_ids=None
+        self, 
+        n_samples, 
+        stride_length, 
+        num_strides, 
+        dt=0.001, 
+        prefix_ids=None
     ):
         ones = torch.ones(n_samples, dtype=self.dtype, device=self.device)
 

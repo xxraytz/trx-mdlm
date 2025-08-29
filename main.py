@@ -11,10 +11,12 @@ import omegaconf
 import rich.syntax
 import rich.tree
 import torch
-
-import dataloader
+import pandas as pd
+from tqdm import tqdm
 import diffusion
 import utils
+import torch.nn.functional as F
+
 
 from dataloader import get_dataloaders
 
@@ -26,10 +28,13 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
     importlib.invalidate_caches()
 
-
+from generation.metrics.evaluator import EvaluatorConfig  # noqa: E402
 from generation.runners.utils import DataConfig  # noqa: E402
+from generation.metrics.evaluator import SampleEvaluator
 
-GEN_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/trx_config.yaml"
+
+GEN_DATA_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/data.yaml"
+GEN_EVAL_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/eval.yaml"
 
 omegaconf.OmegaConf.register_new_resolver("cwd", os.getcwd)
 omegaconf.OmegaConf.register_new_resolver("device_count", torch.cuda.device_count)
@@ -95,6 +100,11 @@ def _print_batch(train_ds, valid_ds, tokenizer, k=64):
         print("ids:", last)
 
 
+def check_configs(base_config, trx_config):
+    assert base_config.model.length == trx_config.max_seq_len
+    assert base_config.loader.global_batch_size == trx_config.batch_size
+    assert base_config.loader.eval_global_batch_size == trx_config.batch_size
+
 def generate_samples(config, logger, tokenizer):
     logger.info("Generating samples.")
     model = _load_from_checkpoint(config=config, tokenizer=tokenizer)
@@ -131,8 +141,39 @@ def generate_samples(config, logger, tokenizer):
     return text_samples
 
 
-def _eval(config, logger):
-    breakpoint()
+def pad_to_len(x: torch.Tensor, L: int, pad_value: int):
+    """Right-pad/clip 2D тензор [B, Lx] до [B, L]."""
+    assert x.ndim == 2
+    if x.size(1) == L:
+        return x
+    if x.size(1) > L:
+        return x[:, :L]
+    return F.pad(x, (0, L - x.size(1)), value=pad_value)
+
+
+def save_df_to(part, tokens, mask, cfg, eval_path):
+    path = f'{eval_path}/{part}.parquet'
+    x = torch.cat(tokens, dim=0).cpu()
+
+    m = mask
+
+    m = m.bool() if m.dtype != torch.bool else m
+
+    seqs = [
+        x[i][m[i]].numpy() for i in range(x.size(0))
+    ]  # list[np.ndarray], разная длина
+    lens = m.sum(dim=1).numpy()
+
+    df = pd.DataFrame({cfg.target_token: seqs, "_seq_len": lens})
+
+    df[cfg.index_name] = list(range(0, len(df)))
+    df.to_parquet(path, index=False)
+
+    return path
+
+
+def _eval_trx_metrics(config, logger):
+
     logger.info("Starting Zero Shot Eval.")
 
     model = _load_from_checkpoint(config=config)
@@ -140,28 +181,45 @@ def _eval(config, logger):
         logger.info("Disabling EMA.")
         model.ema = None
 
-    wandb_logger = None
-    if config.get("wandb", None) is not None:
-        wandb_logger = L.pytorch.loggers.WandbLogger(
-            config=omegaconf.OmegaConf.to_object(config), **config.wandb
-        )
-    callbacks = []
-    if "callbacks" in config:
-        for _, callback in config.callbacks.items():
-            callbacks.append(hydra.utils.instantiate(callback))
-    trainer = hydra.utils.instantiate(
-        config.trainer,
-        default_root_dir=os.getcwd(),
-        callbacks=callbacks,
-        strategy=hydra.utils.instantiate(config.strategy),
-        logger=wandb_logger,
-    )
-    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
-    common_seed = 0
+    data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
+    eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
+    
+    check_configs(config, data_conf)
 
-    (_, _, test_ds), _ = get_dataloaders(dataloader_conf, common_seed)
-    breakpoint()
-    trainer.validate(model, test_ds)
+    common_seed = 0
+    eval_path = os.getcwd() + "/evaluation"
+
+    os.makedirs(eval_path, exist_ok=True)
+
+    sample_evaluator = SampleEvaluator(
+        eval_path,
+        data_conf,
+        eval_conf,
+        device=eval_conf.devices[0],
+        verbose=True,
+    )
+
+    (_, _, test_ds), _ = get_dataloaders(data_conf, common_seed)
+    gt = []
+    mask = []
+    gen = []
+    for i, batch in tqdm(enumerate(test_ds)):
+        _, tokens = model.generate_from_batch(
+            batch, dt=float(getattr(config.sampling, "dt", 0.01))
+        )
+        gt.append(pad_to_len(tokens, config.model.length, 0))
+        gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
+        mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
+        # if i > 2:
+            # break
+
+    mask = torch.cat(mask, dim=0)
+
+    gt_path = save_df_to('gt', gt, mask, cfg=data_conf, eval_path=eval_path)
+    gen_path = save_df_to('gen', gen, mask, cfg=data_conf, eval_path=eval_path)
+
+    results = sample_evaluator.estimate_metrics(gt_path, gen_path)
+    print(results)
 
 
 def _train(config, logger, tokenizer=None):
@@ -188,7 +246,7 @@ def _train(config, logger, tokenizer=None):
             callbacks.append(hydra.utils.instantiate(callback))
 
     # Dataloader from transaction generation
-    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_CONFIG)))
+    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
     common_seed = 0
 
     (train_ds, valid_ds, _), (internal_dataconf, data_conf) = get_dataloaders(
@@ -216,7 +274,7 @@ def main(config):
     if config.mode == "sample_eval":
         generate_samples(config, logger)
     elif config.mode == "eval":
-        _eval(config, logger)
+        _eval_trx_metrics(config, logger)
     else:
         _train(config, logger)
 
