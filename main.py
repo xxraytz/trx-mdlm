@@ -105,6 +105,7 @@ def check_configs(base_config, trx_config):
     assert base_config.loader.global_batch_size == trx_config.batch_size
     assert base_config.loader.eval_global_batch_size == trx_config.batch_size
 
+
 def generate_samples(config, logger, tokenizer):
     logger.info("Generating samples.")
     model = _load_from_checkpoint(config=config, tokenizer=tokenizer)
@@ -152,7 +153,7 @@ def pad_to_len(x: torch.Tensor, L: int, pad_value: int):
 
 
 def save_df_to(part, tokens, mask, cfg, eval_path):
-    path = f'{eval_path}/{part}.parquet'
+    path = f"{eval_path}/{part}.parquet"
     x = torch.cat(tokens, dim=0).cpu()
 
     m = mask
@@ -183,7 +184,7 @@ def _eval_trx_metrics(config, logger):
 
     data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
     eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
-    
+
     check_configs(config, data_conf)
 
     common_seed = 0
@@ -211,12 +212,12 @@ def _eval_trx_metrics(config, logger):
         gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
         mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
         # if i > 2:
-            # break
+        # break
 
     mask = torch.cat(mask, dim=0)
 
-    gt_path = save_df_to('gt', gt, mask, cfg=data_conf, eval_path=eval_path)
-    gen_path = save_df_to('gen', gen, mask, cfg=data_conf, eval_path=eval_path)
+    gt_path = save_df_to("gt", gt, mask, cfg=data_conf, eval_path=eval_path)
+    gen_path = save_df_to("gen", gen, mask, cfg=data_conf, eval_path=eval_path)
 
     results = sample_evaluator.estimate_metrics(gt_path, gen_path)
     print(results)

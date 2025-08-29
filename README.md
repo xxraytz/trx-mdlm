@@ -224,6 +224,15 @@ python main.py \
   sampling.predictor=analytic \
   +wandb.offline=true
 ```
+#### To run evaluation on transactions:
+```
+WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 python main.py model=small data=wikitext2 wandb.name=mdlm-owt parameterization=subs sampling.steps=200 model.length=256 mode=eval eval.checkpoint_path=/home/dev/2025/trx-mdlm/outputs/wikitext2/2025.08.27/133112/checkpoints/best.ckpt loader.eval_global_batch_size=64
+```
+
+#### To run training on transactions:
+```
+WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 python main.py model=small data=wikitext2 wandb.name=mdlm-owt parameterization=subs sampling.steps=200 model.length=256
+```
 
 ### Acknowledgements
 This repository was built off of [SEDD](https://github.com/louaaron/Score-Entropy-Discrete-Diffusion).

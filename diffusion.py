@@ -70,7 +70,7 @@ class Diffusion(L.LightningModule):
 
         self.save_hyperparameters()
         config, data_conf, internal_dataconf = configs
-        
+
         self.config = config
         self.data_conf = data_conf
         self.vocab_size = data_conf.cat_cardinalities[data_conf.target_token]
@@ -87,7 +87,7 @@ class Diffusion(L.LightningModule):
         if self.config.backbone == "dit":
             self.backbone = models.dit.DIT(self.config, vocab_size=self.vocab_size)
         elif self.config.backbone == "dimamba":
-            raise ValueError('Mamba doesn\'t supported')
+            raise ValueError("Mamba doesn't supported")
         elif self.config.backbone == "ar":
             self.backbone = models.autoregressive.AR(
                 self.config, vocab_size=self.vocab_size, mask_index=self.mask_index
@@ -268,7 +268,7 @@ class Diffusion(L.LightningModule):
     def forward(self, x, sigma):
         """Returns log score."""
         sigma = self._process_sigma(sigma)
-        with torch.autocast(device_type="cuda", dtype=torch.float16):
+        with torch.autocast(device_type="cuda", dtype=torch.float32):
             logits = self.backbone(x, sigma)
 
         if self.parameterization == "subs":
@@ -345,7 +345,7 @@ class Diffusion(L.LightningModule):
             prog_bar=True,
             on_epoch=False,
             sync_dist=True,
-            logger=True
+            logger=True,
         )
         return loss
 
@@ -378,7 +378,7 @@ class Diffusion(L.LightningModule):
             samples = None
             for _ in range(self.config.sampling.num_sample_batches):
                 samples = self._sample()
-                
+
                 breakpoint()
                 ...
                 # TODO: If we need some metrics they might be called here
@@ -387,7 +387,7 @@ class Diffusion(L.LightningModule):
                 # text_samples = self.tokenizer.batch_decode(samples)
 
                 # if self.config.eval.compute_generative_perplexity:
-                    # self.compute_generative_perplexity(text_samples)
+                # self.compute_generative_perplexity(text_samples)
         if self.ema:
             self.ema.restore(
                 itertools.chain(self.backbone.parameters(), self.noise.parameters())
@@ -483,7 +483,7 @@ class Diffusion(L.LightningModule):
         return copy_flag * x + (1 - copy_flag) * _x
 
     def _ar_sampler(self, bsz):
-        breakpoint() # Check bos_token_id?????
+        breakpoint()  # Check bos_token_id?????
         # precompute token buffer
         num_pred_tokens = self.config.model.length - 1
         x = torch.zeros(
@@ -661,13 +661,13 @@ class Diffusion(L.LightningModule):
             input_tokens = x0[:, start:end]
             output_tokens = x0[:, start + 1 : end + 1]
             new_attention_mask = attention_mask[:, start:end]
-            breakpoint() # Check bos_token_id?????
+            breakpoint()  # Check bos_token_id?????
             # Helps with validation PPL, since the val
             # examples will all start and end with BOS/EOS
             input_tokens[:, 0] = self.tokenizer.bos_token_id
             output_tokens[:, -1] = self.tokenizer.eos_token_id
         elif self.parameterization == "ar":
-            breakpoint() # Check bos_token_id?????
+            breakpoint()  # Check bos_token_id?????
 
             input_tokens = x0[:, :-1]
             output_tokens = x0[:, 1:]
@@ -795,13 +795,9 @@ class Diffusion(L.LightningModule):
         return entropy
 
     @torch.no_grad
-    def generate_from_batch(
-        self, 
-        batch,
-        dt: float = 0.001
-    ):
-        x0 = batch['input_ids'].to(self.device).long()
-        attn = batch['attention_mask'].to(self.device).long()
+    def generate_from_batch(self, batch, dt: float = 0.001):
+        x0 = batch["input_ids"].to(self.device).long()
+        attn = batch["attention_mask"].to(self.device).long()
         B, L = x0.shape
 
         gen_len = int(self.data_conf.generation_len)
@@ -809,7 +805,7 @@ class Diffusion(L.LightningModule):
         assert lengths.max() <= L and lengths.min() > 0
         hist_len = lengths - gen_len
 
-        idx = torch.arange(L, device=x0.device)[None, :] # TODO: WHAT???
+        idx = torch.arange(L, device=x0.device)[None, :]  # TODO: WHAT???
 
         valid_region = idx < lengths[:, None]
         history_region = idx < hist_len[:, None]  # TODO: No MISTAKES?
@@ -818,33 +814,33 @@ class Diffusion(L.LightningModule):
         initial = x0.clone()
         initial[target_region] = self.mask_index
 
-        locked = (~target_region)
+        locked = ~target_region
 
         steps, tokens = self.sample_subs_guidance_for_batch(
             initial_tokens=initial,
             stride_length=gen_len,
             num_strides=0,
             dt=dt,
-            locked_mask=locked
+            locked_mask=locked,
         )
         return steps, tokens
 
     @torch.no_grad
     def sample_subs_guidance_for_batch(
-        self, 
+        self,
         initial_tokens: torch.LongTensor,
-        stride_length, 
-        num_strides, 
-        dt: float = 0.001, 
+        stride_length,
+        num_strides,
+        dt: float = 0.001,
         locked_mask=None,
     ):
         assert initial_tokens.ndim == 2, initial_tokens.shape
         B, L = initial_tokens.shape
 
         x = initial_tokens.to(self.device, dtype=torch.long).clone()
-        
+
         if locked_mask is None:
-            locked_mask = (x != self.mask_index)
+            locked_mask = x != self.mask_index
         else:
             locked_mask = locked_mask.to(self.device, dtype=torch.bool)
 
@@ -878,9 +874,9 @@ class Diffusion(L.LightningModule):
 
             logits = self.forward(x, 0 * ones)
             x_hat = logits.argmax(dim=-1)
-                
+
             # сохраняем залоченные позиции неизменными
-            x = torch.where(locked_mask, x, x_hat) # TODO: Check what is that?
+            x = torch.where(locked_mask, x, x_hat)  # TODO: Check what is that?
 
             pieces.append(x[:, :stride_length].detach().cpu().numpy())
 
@@ -893,12 +889,7 @@ class Diffusion(L.LightningModule):
 
     @torch.no_grad
     def sample_subs_guidance(
-        self, 
-        n_samples, 
-        stride_length, 
-        num_strides, 
-        dt=0.001, 
-        prefix_ids=None
+        self, n_samples, stride_length, num_strides, dt=0.001, prefix_ids=None
     ):
         ones = torch.ones(n_samples, dtype=self.dtype, device=self.device)
 
@@ -950,7 +941,7 @@ class Diffusion(L.LightningModule):
 
         intermediate_tokens.append(target.cpu().numpy())
         intermediate_text_samples = []
-        breakpoint() # Check here eos_token_id. And also batch decode!
+        breakpoint()  # Check here eos_token_id. And also batch decode!
         sequence_lengths = (
             (
                 np.concatenate(intermediate_tokens, axis=1)[:, 1:]

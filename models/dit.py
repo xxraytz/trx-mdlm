@@ -1,10 +1,19 @@
+import os
 import math
 import typing
 
-# import flash_attn
-# import flash_attn.layers.rotary
-from torch.nn.attention import sdpa_kernel, SDPBackend
+try:
+  from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+  from flash_attn.layers.rotary import apply_rotary_emb_qkv_
+  _HAVE_FLASH_ATTN = True
+  print("Flash attention could be applied")
+except Exception:
+  print("Flash attention could not be applied")
+  flash_attn_varlen_qkvpacked_func = None
+  apply_rotary_emb_qkv_ = None
+  _HAVE_FLASH_ATTN = True
 
+from torch.nn.attention import sdpa_kernel, SDPBackend
 import huggingface_hub
 import omegaconf
 import torch
@@ -18,6 +27,42 @@ torch._C._jit_set_profiling_executor(False)
 torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
+
+def _cuda_sm() -> int:
+  if not torch.cuda.is_available():
+    return 0
+  major, minor = torch.cuda.get_device_capability()
+  return 10 * major + minor
+
+def _can_use_flash() -> bool:
+  return _HAVE_FLASH_ATTN and _cuda_sm() >= 80 # To correct Ampere working
+
+def _resolve_flash_flag(cfg) -> bool:
+  env = os.getenv("USE_FLASH_ATTN", "")
+  if env is not None:
+    env = env.strip().lower()
+    if env in ("1", "true", "on", "enable"):
+      return _can_use_flash()
+    if env in ("0", "false", "off", "disable"):
+      return False
+  
+  val = None
+  if hasattr(cfg, "model"):
+    if "use_flash_attention" in cfg.model:
+      val = cfg.model["use_flash_attention"]
+    elif "attn_impl" in cfg.model:
+      val = cfg.model["attn_impl"]
+
+  if isinstance(val, bool):
+    return bool(val) and _can_use_flash()
+  if isinstance(val, str):
+    v = val.lower()
+    if v in ("flash", "fa", "on", "true", "enabled"):
+      return _can_use_flash()
+    if v in ("sdpa", "math", "eager", "off", "false", "no", "disabled"):
+      return False
+
+  return _can_use_flash()
 
 def bias_dropout_add_scale(
     x: torch.Tensor,
@@ -120,6 +165,11 @@ def apply_rotary_qk(q, k, cos_cached, sin_cached):
     k = k * cos + _rotate_half(k) * sin
     return q, k
 
+def apply_rotary_pos_emb(qkv, cos, sin):
+  cos = cos[0,:,0,0,:cos.shape[-1]//2]
+  sin = sin[0,:,0,0,:sin.shape[-1]//2]
+  return apply_rotary_emb_qkv_(qkv, cos, sin)
+
 
 # function overload
 def modulate(x, shift, scale):
@@ -218,9 +268,10 @@ class LabelEmbedder(nn.Module):
 
 
 class DDiTBlock(nn.Module):
-  def __init__(self, dim, n_heads, cond_dim, mlp_ratio=4, dropout=0.1):
+  def __init__(self, dim, n_heads, cond_dim, use_flash_attention: bool = False, mlp_ratio=4, dropout=0.1):
     super().__init__()
     self.n_heads = n_heads
+    self.use_flash_attention = use_flash_attention
 
     self.norm1 = LayerNorm(dim)
     self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
@@ -261,21 +312,38 @@ class DDiTBlock(nn.Module):
 
     qkv = self.attn_qkv(x)  # (B,S,3H*D)
     qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
-    q, k, v = qkv.unbind(dim=2)  # (B,S,H,D) каждое
 
     cos_cached, sin_cached = rotary_cos_sin
-    with torch.autocast(device_type='cuda', enabled=False):
-        q, k = apply_rotary_qk(q, k, cos_cached, sin_cached)
 
-    # SDPA ждёт (B,H,S,D)
-    q = rearrange(q, 'b s h d -> b h s d')
-    k = rearrange(k, 'b s h d -> b h s d')
-    v = rearrange(v, 'b s h d -> b h s d')
+    if self.use_flash_attention:
+      with torch.autocast(device_type='cuda', enabled=False):
+        qkv = apply_rotary_pos_emb(
+          qkv, cos_cached.to(qkv.dtype), sin_cached.to(qkv.dtype)
+        )
+      qkv = rearrange(qkv, 'b s ... -> (b s) ...')
+      if seqlens is None:
+        cu_seqlens = torch.arange(0, (batch_size + 1) * seq_len, step=seq_len,
+                                  dtype=torch.int32, device=qkv.device)
+      else:
+        cu_seqlens = seqlens.cumsum(-1)
+      
+      x = flash_attn_varlen_qkvpacked_func(qkv, cu_seqlens, seq_len, 0.0, causal=False)
+      x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
+    else:
+      q, k, v = qkv.unbind(dim=2)  # (B,S,H,D) каждое
 
-    # Насильно "обычный" attention (без flash/mem-efficient)
-    with sdpa_kernel(SDPBackend.MATH):
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
-    x = rearrange(y, 'b h s d -> b s (h d)')
+      with torch.autocast(device_type='cuda', enabled=False):
+          q, k = apply_rotary_qk(q, k, cos_cached, sin_cached)
+
+      # (B,H,S,D)
+      q = rearrange(q, 'b s h d -> b h s d')
+      k = rearrange(k, 'b s h d -> b h s d')
+      v = rearrange(v, 'b s h d -> b h s d')
+
+      # Насильно "обычный" attention (без flash/mem-efficient)
+      with sdpa_kernel(SDPBackend.MATH):
+          x = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
+      x = rearrange(x, 'b h s d -> b s (h d)')
 
 
     x = bias_dropout_scale_fn(self.attn_out(x),
@@ -333,6 +401,8 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
 
     self.config = config
     self.vocab_size = vocab_size
+    
+    self.use_flash_attention = _resolve_flash_flag(self.config)
 
     self.vocab_embed = EmbeddingLayer(config.model.hidden_size,
                                       vocab_size)
@@ -345,7 +415,8 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
       blocks.append(DDiTBlock(config.model.hidden_size,
                               config.model.n_heads,
                               config.model.cond_dim,
-                              dropout=config.model.dropout))
+                              dropout=config.model.dropout,
+                              use_flash_attention=self.use_flash_attention))
     self.blocks = nn.ModuleList(blocks)
 
     self.output_layer = DDitFinalLayer(
@@ -366,7 +437,7 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
 
     rotary_cos_sin = self.rotary_emb(x)
 
-    with torch.autocast(device_type='cuda', dtype=torch.float32):
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16 if _cuda_sm() >= 80 else torch.float32):
       for i in range(len(self.blocks)):
         x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
       x = self.output_layer(x, c)
