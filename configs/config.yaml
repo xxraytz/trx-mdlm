@@ -1,11 +1,12 @@
 defaults:
   - _self_
   - /callbacks: [checkpoint_every_n_steps, checkpoint_monitor, learning_rate_monitor]
-  - /data: openwebtext
+  - /data: ag_news
   - /model: small
   - /strategy: ddp
   - /noise: loglinear
   - /lr_scheduler: constant_warmup
+  - /eval: default
 
 mode: train  # train / ppl_eval / sample_eval
 diffusion: absorbing_state
@@ -73,8 +74,8 @@ trainer:
   max_steps: 1_000_000
   log_every_n_steps: 10
   limit_train_batches: 1.0   # train on full dataset, can be used to toggle quick run
-  limit_val_batches: 0.05     # validate on full dataset, can be used to toggle quick run
-  val_check_interval: 10
+  limit_val_batches: 0.4     # validate on full dataset, can be used to toggle quick run
+  val_check_interval: 500
 
 wandb:
   project: text-diffusion
@@ -85,12 +86,12 @@ wandb:
   id: ${.name}_${seed}
   tags:
     - ${noise.type}
-    - ${data.train}
-    - ${data.valid}
+    # - ${data.train}
+    # - ${data.valid}
 
 hydra:
   run:
-    dir: ./outputs/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: ./outputs/${data.dataset_name}/${now:%Y.%m.%d}/${now:%H%M%S}
   job:
     chdir: true
 

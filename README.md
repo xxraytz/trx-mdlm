@@ -224,14 +224,30 @@ python main.py \
   sampling.predictor=analytic \
   +wandb.offline=true
 ```
+
 #### To run evaluation on transactions:
 ```
-WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 python main.py model=small data=wikitext2 wandb.name=mdlm-owt parameterization=subs sampling.steps=200 model.length=256 mode=eval eval.checkpoint_path=/home/dev/2025/trx-mdlm/outputs/wikitext2/2025.08.27/133112/checkpoints/best.ckpt loader.eval_global_batch_size=64
+WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 \
+python main.py \
+model=small \
+parameterization=subs \
+sampling.steps=200 \
+model.length=256 \
+mode=eval \
+eval.checkpoint_path=<PATH_TO_CHECKPOINT>/best.ckpt \
+loader.eval_global_batch_size=64
 ```
 
 #### To run training on transactions:
 ```
-WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 python main.py model=small data=wikitext2 wandb.name=mdlm-owt parameterization=subs sampling.steps=200 model.length=256
+WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=1 \
+python main.py \
+data=age \
+model=small \
+parameterization=subs \
+sampling.steps=200 \
+model.length=256 \
+trainer.val_check_interval=100 \
 ```
 
 ### Acknowledgements

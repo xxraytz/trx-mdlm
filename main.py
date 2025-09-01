@@ -16,6 +16,7 @@ from tqdm import tqdm
 import diffusion
 import utils
 import torch.nn.functional as F
+from omegaconf import OmegaConf
 
 
 from dataloader import get_dataloaders
@@ -33,7 +34,6 @@ from generation.runners.utils import DataConfig  # noqa: E402
 from generation.metrics.evaluator import SampleEvaluator
 
 
-GEN_DATA_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/data.yaml"
 GEN_EVAL_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/eval.yaml"
 
 omegaconf.OmegaConf.register_new_resolver("cwd", os.getcwd)
@@ -182,8 +182,11 @@ def _eval_trx_metrics(config, logger):
         logger.info("Disabling EMA.")
         model.ema = None
 
-    data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
-    eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
+    data_conf = DataConfig(**OmegaConf.to_container(config["data"], resolve=True))
+    eval_conf = EvaluatorConfig(**OmegaConf.to_container(config["eval"], resolve=True))
+    # data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
+    # eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
+    assert 'metrics' in eval_conf, 'Something wrong with eval configs!'
 
     check_configs(config, data_conf)
 
@@ -247,7 +250,10 @@ def _train(config, logger, tokenizer=None):
             callbacks.append(hydra.utils.instantiate(callback))
 
     # Dataloader from transaction generation
-    dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
+    # dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
+
+    data_dict = OmegaConf.to_container(config["data"], resolve=True)
+    dataloader_conf = DataConfig(**data_dict)
     common_seed = 0
 
     (train_ds, valid_ds, _), (internal_dataconf, data_conf) = get_dataloaders(
@@ -270,7 +276,7 @@ def main(config):
     """Main entry point for training."""
     L.seed_everything(config.seed)
     _print_config(config, resolve=True, save_cfg=True)
-
+    breakpoint()
     logger = utils.get_logger(__name__)
     if config.mode == "sample_eval":
         generate_samples(config, logger)

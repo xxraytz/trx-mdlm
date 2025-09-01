@@ -1,0 +1,48 @@
+batch_size: 32
+cat_cardinalities:
+  mcc_category: 28
+dataset_name: alphabattle_small
+drop_nonfocus: true
+focus_on:
+- mcc_category
+generation_len: 32
+index_name: app_id
+loader_transforms: null
+max_seq_len: 350
+min_history_len: 32
+num_names: null
+num_workers: 4
+padding_value: 0.0
+target_token: mcc_category
+test_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/test
+time_name: hours_since_first_tx
+train_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/train
+train_random_end: none
+train_resamples: 1
+train_transforms:
+  '0':
+    RescaleTime:
+      loc: 0.0
+      scale: 11754.0
+  '1':
+    TimeToDiff:
+      disable: true
+  '3':
+    CutTargetSequence:
+      target_len: 0
+  local_shuffle:
+    LocalShuffle:
+      max_shift: 0
+val_random_end: time
+val_ratio: 0.15
+val_transforms:
+  '0':
+    RescaleTime:
+      loc: 0.0
+      scale: 11754.0
+  '1':
+    TimeToDiff:
+      disable: true
+  '3':
+    CutTargetSequence:
+      target_len: 32
