@@ -2,7 +2,7 @@ dataset_name: mbd
 train_path: /home/dev/2025/transaction-generation/data/mbd-50k/train
 test_path: /home/dev/2025/transaction-generation/data/mbd-50k/test
 batch_size: 64
-num_workers: 0
+num_workers: 4
 val_ratio: 0.15
 train_resamples: 1
 max_seq_len: 256

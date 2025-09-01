@@ -366,28 +366,28 @@ class Diffusion(L.LightningModule):
         return self._compute_loss(batch, prefix="val")
 
     def on_validation_epoch_end(self):
-        if (
-            (
-                self.config.eval.compute_perplexity_on_sanity
-                or not self.trainer.sanity_checking
-            )
-            and self.config.eval.generate_samples
-            and not self.parameterization == "ar"
-        ):
-            # TODO(justin): implement sampling and kv cache for AR
-            samples = None
-            for _ in range(self.config.sampling.num_sample_batches):
-                samples = self._sample()
+        # if (
+        #     (
+        #         self.config.eval.compute_perplexity_on_sanity
+        #         or not self.trainer.sanity_checking
+        #     )
+        #     and self.config.eval.generate_samples
+        #     and not self.parameterization == "ar"
+        # ):
+        #     # TODO(justin): implement sampling and kv cache for AR
+        #     samples = None
+        #     for _ in range(self.config.sampling.num_sample_batches):
+        #         samples = self._sample()
 
-                breakpoint()
-                ...
-                # TODO: If we need some metrics they might be called here
+        #         breakpoint()
+        #         ...
+        #         # TODO: If we need some metrics they might be called here
 
-                # Decode the samples to be re-tokenized by eval model
-                # text_samples = self.tokenizer.batch_decode(samples)
+        #         # Decode the samples to be re-tokenized by eval model
+        #         # text_samples = self.tokenizer.batch_decode(samples)
 
-                # if self.config.eval.compute_generative_perplexity:
-                # self.compute_generative_perplexity(text_samples)
+        #         # if self.config.eval.compute_generative_perplexity:
+        #         # self.compute_generative_perplexity(text_samples)
         if self.ema:
             self.ema.restore(
                 itertools.chain(self.backbone.parameters(), self.noise.parameters())
