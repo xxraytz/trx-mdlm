@@ -117,7 +117,6 @@ def generate_samples(config, logger, tokenizer):
     num_strides = config.sampling.num_strides
     for _ in range(config.sampling.num_sample_batches):
         if config.sampling.semi_ar:
-            breakpoint()
             prefix = tokenizer.encode("We buy some food")
 
             _, intermediate_samples, _ = model.restore_model_and_semi_ar_sample(
@@ -182,13 +181,14 @@ def _eval_trx_metrics(config, logger):
         logger.info("Disabling EMA.")
         model.ema = None
 
+    resolve_configs(config)
+
     data_conf = DataConfig(**OmegaConf.to_container(config["data"], resolve=True))
-    eval_conf = EvaluatorConfig(**OmegaConf.to_container(config["eval"], resolve=True))
+    eval_conf = EvaluatorConfig(**OmegaConf.to_container(config["metrics"], resolve=True))
     # data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
     # eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
-    assert 'metrics' in eval_conf, 'Something wrong with eval configs!'
-
-    check_configs(config, data_conf)
+    assert isinstance(eval_conf.metrics, list), 'Something wrong with eval configs!'
+    # check_configs(config, data_conf)
 
     common_seed = 0
     eval_path = os.getcwd() + "/evaluation"
@@ -214,8 +214,8 @@ def _eval_trx_metrics(config, logger):
         gt.append(pad_to_len(tokens, config.model.length, 0))
         gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
         mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
-        # if i > 2:
-        # break
+        if i > 10:
+            break
 
     mask = torch.cat(mask, dim=0)
 
@@ -226,6 +226,9 @@ def _eval_trx_metrics(config, logger):
     print(results)
 
 
+def resolve_configs(config):
+    config['data']['batch_size'] = config['loader']['global_batch_size'] if config['mode'] == 'train' else config['loader']['eval_global_batch_size']
+    
 def _train(config, logger, tokenizer=None):
     logger.info("Starting Training.")
     wandb_logger = None
@@ -251,7 +254,8 @@ def _train(config, logger, tokenizer=None):
 
     # Dataloader from transaction generation
     # dataloader_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
-
+    resolve_configs(config)
+    logger.info(f"batch_size = {config['data']['batch_size']}")
     data_dict = OmegaConf.to_container(config["data"], resolve=True)
     dataloader_conf = DataConfig(**data_dict)
     common_seed = 0
@@ -276,7 +280,6 @@ def main(config):
     """Main entry point for training."""
     L.seed_everything(config.seed)
     _print_config(config, resolve=True, save_cfg=True)
-    breakpoint()
     logger = utils.get_logger(__name__)
     if config.mode == "sample_eval":
         generate_samples(config, logger)

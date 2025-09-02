@@ -6,7 +6,7 @@ defaults:
   - /strategy: ddp
   - /noise: loglinear
   - /lr_scheduler: constant_warmup
-  - /eval: default
+  - /metrics: default
 
 mode: train  # train / ppl_eval / sample_eval
 diffusion: absorbing_state
