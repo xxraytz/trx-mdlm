@@ -403,6 +403,10 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
     self.vocab_size = vocab_size
     
     self.use_flash_attention = _resolve_flash_flag(self.config)
+    if self.use_flash_attention:
+      print('Flash attention will be applied!')
+    else:
+      print('Flash attention couldn\'t be applied!')
 
     self.vocab_embed = EmbeddingLayer(config.model.hidden_size,
                                       vocab_size)
