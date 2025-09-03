@@ -68,7 +68,7 @@ class Diffusion(L.LightningModule):
     ):
         super().__init__()
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["configs"])
         config, data_conf, internal_dataconf = configs
 
         self.config = config
