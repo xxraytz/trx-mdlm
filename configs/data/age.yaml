@@ -14,9 +14,9 @@ num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: small_group
-test_path: /home/dev/2025/transaction-generation/data/age/preprocessed/test
+test_path: /workspace/dev/transaction-generation/data/age/preprocessed/test
 time_name: trans_date
-train_path: /home/dev/2025/transaction-generation/data/age/preprocessed/train
+train_path: /workspace/dev/transaction-generation/data/age/preprocessed/train
 train_random_end: none
 train_resamples: 1
 train_transforms:
@@ -37,13 +37,6 @@ train_transforms:
     Logarithm:
       names:
       - amount_rur
-  ngrams:
-    NGramTransform:
-      disable: true
-      feature_counts: 203
-      feature_name: small_group
-      max_l: 1024
-      model_path: data/age/preprocessed/ngrams-mapper-32.pt
 val_random_end: time
 val_ratio: 0.15
 val_transforms:
@@ -56,18 +49,8 @@ val_transforms:
       disable: false
   '3':
     CutTargetSequence:
-      target_len: 32
+      target_len: 0
   log_tfs:
     Logarithm:
       names:
       - amount_rur
-  ngrams:
-    NGramTransform:
-      disable: true
-      feature_counts: 203
-      feature_name: small_group
-      max_l: 1024
-      model_path: data/age/preprocessed/ngrams-mapper-32.pt
-  shuffle_users:
-    ShuffleUsers:
-      shuffle: false

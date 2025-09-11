@@ -14,6 +14,10 @@ from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
 NUM_RE = r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
+METRIC_LINE_RE = re.compile(
+    rf"global step\s+(?P<step>\d+):\s*'(?P<key>[^']+)'\s+reached\s+({NUM_RE})\s+\(best\s+(?P<best>{NUM_RE})\)",
+    re.IGNORECASE,
+)
 
 def _fmt(v: Any) -> str:
     if isinstance(v, bool):
@@ -53,6 +57,7 @@ def _extract_metric_from_log(text: str, metric_key: str) -> float:
     Берём последнее вхождение и возвращаем Y (best).
     """
     # Пример ключа: val/nll — в логе он в одинарных кавычках.
+
     pat = re.compile(
         rf":\s*'{re.escape(metric_key)}'\s+reached\s+({NUM_RE})\s+\(best\s+({NUM_RE})\)",
         re.IGNORECASE,
@@ -65,60 +70,95 @@ def _extract_metric_from_log(text: str, metric_key: str) -> float:
     best_val = float(last.group(2))
     return best_val
 
-def make_objective(cfg: DictConfig, project_root: Path, base_overrides: List[str]):
+
+def make_objective(cfg: DictConfig, project_root: Path, base_overrides: list, study_name: str):
     params = cfg.optuna.params
     suggestions = cfg.optuna.suggestions
 
-    study_name: str = params.get("study_name", "optuna_study")
     direction: str = str(params.get("direction", "min")).lower()
     assert direction in ("min", "max")
     metric_key: str = params.get("target_metric", "val/nll")
     sanity_steps: int = int(params.get("num_sanity_val_steps", 0))
+    trial_overrides: list = list(params.get("trial_overrides", []))
+
+    # Печатаем только краткие строки
+    def _should_print(line: str) -> bool:
+        return METRIC_LINE_RE.search(line) is not None
 
     def objective(trial: optuna.trial.Trial):
-        # Своя рабочая директория для trial: Hydra туда всё сложит
         trial_dir = _make_trial_dir(project_root, study_name, trial.number)
 
-        # Параметры, предложенные Optuna
         trial_ov = _build_trial_overrides(trial, suggestions)
-
-        # Минимально необходимые оверрайды в main.py:
         hydra_ov = []
         hydra_ov += trial_ov
-        hydra_ov += base_overrides  # ваши ручные (напр. data=age)
+        hydra_ov += base_overrides
+        hydra_ov += trial_overrides
         hydra_ov += [
-            f"hydra.run.dir={str(trial_dir)}",      # всё в папку trial'а
-            "wandb=null",                            # отключить WandB
+            f"hydra.run.dir={str(trial_dir)}",
+            "wandb=null",
             f"trainer.num_sanity_val_steps={sanity_steps}",
         ]
 
+        # ВАЖНО: чтобы не словить сравнение int со str внутри Trainer,
+        # зафиксируем валидный val_check_interval (число), если он вдруг None.
+        if not any(x.startswith("trainer.val_check_interval=") for x in hydra_ov):
+            hydra_ov.append("trainer.val_check_interval=100")
+
         env = os.environ.copy()
-        env["WANDB_MODE"] = "disabled"  # на всякий случай
+        env["WANDB_MODE"] = "disabled"
 
         cmd = [sys.executable, "main.py"] + hydra_ov
         print("[OPTUNA] launch:", " ".join(shlex.quote(x) for x in cmd))
 
-        ret = subprocess.run(
-            cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        log_path = trial_dir / "train.log"
+        best_seen = None
+        last_step = 0
 
-        # Сохраняем лог и оверрайды
-        (trial_dir / "train.log").write_text(ret.stdout)
+        with open(log_path, "w") as lf:
+            proc = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            try:
+                assert proc.stdout is not None
+                for raw in proc.stdout:
+                    line = raw.rstrip("\n")
+                    lf.write(line + "\n")
+                    # Показываем только «короткие» строки
+                    if _should_print(line):
+                        print(f"[T{trial.number:04d}] {line}")
+
+                    m = METRIC_LINE_RE.search(line)
+                    if m and m.group("key") == metric_key:
+                        last_step = int(m.group("step"))
+                        best_seen = float(m.group("best"))
+                        trial.report(best_seen, step=last_step)
+                        if trial.should_prune():
+                            proc.terminate()
+                            raise optuna.TrialPruned(
+                                f"Pruned at step {last_step} with best={best_seen}"
+                            )
+                retcode = proc.wait()
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+
         (trial_dir / "overrides.json").write_text(json.dumps(hydra_ov, indent=2))
 
-        if ret.returncode != 0:
-            print(ret.stdout)
-            raise optuna.TrialPruned(f"Training failed with code {ret.returncode}")
+        if retcode != 0:
+            raise optuna.TrialPruned(f"Training failed with code {retcode}")
 
-        # Метрику берём из лога (последнее best для target_metric)
-        score = _extract_metric_from_log(ret.stdout, metric_key)
-        return score
+        if best_seen is None:
+            best_seen = _extract_metric_from_log(log_path.read_text(), metric_key)
+
+        return best_seen
 
     return objective, direction
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -149,7 +189,10 @@ def main():
     seed = args.seed if args.seed is not None else int(params.get("seed", 1))
     storage = args.storage or params.get("storage", None)
 
-    objective, direction = make_objective(cfg, project_root, base_overrides=args.overrides)
+    objective, direction = make_objective(cfg, 
+                                          project_root, 
+                                          base_overrides=args.overrides,
+                                          study_name=args.study_name,)
 
     optuna.logging.set_verbosity(optuna.logging.INFO)
     sampler = optuna.samplers.TPESampler(seed=seed, n_startup_trials=n_startup)

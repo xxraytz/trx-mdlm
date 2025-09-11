@@ -1,17 +1,21 @@
-devices: ["cuda:1", "cuda:2"]
-topk: 1
-temperature: 1.
-metrics:
-  - OTD
-  - Levenshtein
-  - Cardinality
-  - F1Metric:
-      average: macro
-  - F1Metric:
-      average: micro
-
-  # - Density:
-  #     log_cols: ["amount_rur"]
-  #     with_timediff: True
-  #     save_details: True
-  #     verbose: False
+evaluator:
+  devices: ["cuda:0", "cuda:0"] # ALWAYS SET MORE THAN 1 DEVICE
+  topk: 1
+  temperature: 1.
+  metrics:
+    - OTD
+    - OTD:
+        f1_average: micro
+    - Cardinality
+    - F1Score:
+        average: macro
+    - F1Score:
+        average: micro
+    - Detection:
+        condition_len: 32
+        verbose: True
+    # - Density:
+    #     log_cols: ["amount_rur"]
+    #     with_timediff: True
+    #     save_details: True
+    #     verbose: False

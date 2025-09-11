@@ -1,22 +1,22 @@
 batch_size: 32
 cat_cardinalities:
   mcc_category: 28
-dataset_name: alphabattle_small
+dataset_name: alphabattle
 drop_nonfocus: true
 focus_on:
 - mcc_category
 generation_len: 32
 index_name: app_id
 loader_transforms: null
-max_seq_len: 350
+max_seq_len: 512
 min_history_len: 32
 num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: mcc_category
-test_path: /workspace/dev/transaction-generation/data/alphabattle-100k/test
+test_path: /workspace/dev/transaction-generation/data/alphabattle-full/test
 time_name: hours_since_first_tx
-train_path: /workspace/dev/transaction-generation/data/alphabattle-100k/train
+train_path: /workspace/dev/transaction-generation/data/alphabattle-full/train
 train_random_end: none
 train_resamples: 1
 train_transforms:
@@ -45,4 +45,4 @@ val_transforms:
       disable: true
   '3':
     CutTargetSequence:
-      target_len: 0
+      target_len: 32

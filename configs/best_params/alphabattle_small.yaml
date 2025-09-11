@@ -1,0 +1,13 @@
+model:
+    name: small
+optim:
+    lr: 0.002363657
+    weight_decay: 6.156148197030368e-11
+lr_scheduler:
+    num_warmup_steps: 200
+training:
+    ema: 0.999
+    sampling_eps: 0.000591558
+noise:
+    sigma_max: 8.78866281
+    sigma_min: 0.0005511336

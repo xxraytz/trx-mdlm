@@ -8,3 +8,4 @@ n_heads: 16
 scale_by_sigma: True
 dropout: 0.1
 tie_word_embeddings: False
+use_flash_attention: True

@@ -248,6 +248,7 @@ parameterization=subs \
 sampling.steps=200 \
 model.length=256 \
 trainer.val_check_interval=100 \
+model.use_flash_attention=True
 ```
 
 ### Acknowledgements

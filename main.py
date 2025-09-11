@@ -34,7 +34,7 @@ from generation.runners.utils import DataConfig  # noqa: E402
 from generation.metrics.evaluator import SampleEvaluator
 
 
-GEN_EVAL_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/eval.yaml"
+# GEN_EVAL_CONFIG = "/home/dev/2025/trx-mdlm/configs/gen/eval.yaml"
 
 omegaconf.OmegaConf.register_new_resolver("cwd", os.getcwd)
 omegaconf.OmegaConf.register_new_resolver("device_count", torch.cuda.device_count)
@@ -43,11 +43,10 @@ omegaconf.OmegaConf.register_new_resolver("div_up", lambda x, y: (x + y - 1) // 
 
 
 def _load_from_checkpoint(config):
-    if "hf" in config.backbone:
+    if "hf" in config[0].backbone:
         return diffusion.Diffusion(config).to("cuda")
-
     return diffusion.Diffusion.load_from_checkpoint(
-        config.eval.checkpoint_path, config=config
+        config[0].eval.checkpoint_path, configs=config
     )
 
 
@@ -165,7 +164,9 @@ def save_df_to(part, tokens, mask, cfg, eval_path):
     lens = m.sum(dim=1).numpy()
 
     df = pd.DataFrame({cfg.target_token: seqs, "_seq_len": lens})
-
+    
+    df[cfg.time_name] = df[cfg.target_token] / 2.
+    
     df[cfg.index_name] = list(range(0, len(df)))
     df.to_parquet(path, index=False)
 
@@ -176,21 +177,18 @@ def _eval_trx_metrics(config, logger):
 
     logger.info("Starting Zero Shot Eval.")
 
-    model = _load_from_checkpoint(config=config)
-    if config.eval.disable_ema:
-        logger.info("Disabling EMA.")
-        model.ema = None
-
     resolve_configs(config)
 
     data_conf = DataConfig(**OmegaConf.to_container(config["data"], resolve=True))
-    eval_conf = EvaluatorConfig(**OmegaConf.to_container(config["metrics"], resolve=True))
+    eval_conf = EvaluatorConfig(**OmegaConf.to_container(config["metrics"]["evaluator"], resolve=True))
     # data_conf = DataConfig(**yaml.safe_load(open(GEN_DATA_CONFIG)))
     # eval_conf = EvaluatorConfig(**yaml.safe_load(open(GEN_EVAL_CONFIG)))
     assert isinstance(eval_conf.metrics, list), 'Something wrong with eval configs!'
     # check_configs(config, data_conf)
 
     common_seed = 0
+
+        
     eval_path = os.getcwd() + "/evaluation"
 
     os.makedirs(eval_path, exist_ok=True)
@@ -203,25 +201,33 @@ def _eval_trx_metrics(config, logger):
         verbose=True,
     )
 
-    (_, _, test_ds), _ = get_dataloaders(data_conf, common_seed)
+    (_, _, test_ds), (internal_dataconf, data_conf) = get_dataloaders(data_conf, common_seed)
+
+    
+    model = _load_from_checkpoint(config=(config, data_conf, internal_dataconf))
+    if config.eval.disable_ema:
+        logger.info("Disabling EMA.")
+        model.ema = None
+
     gt = []
     mask = []
     gen = []
     for i, batch in tqdm(enumerate(test_ds)):
+
         _, tokens = model.generate_from_batch(
             batch, dt=float(getattr(config.sampling, "dt", 0.01))
         )
         gt.append(pad_to_len(tokens, config.model.length, 0))
         gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
         mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
-        if i > 10:
+        if i >= 100:
             break
 
     mask = torch.cat(mask, dim=0)
 
     gt_path = save_df_to("gt", gt, mask, cfg=data_conf, eval_path=eval_path)
     gen_path = save_df_to("gen", gen, mask, cfg=data_conf, eval_path=eval_path)
-
+    
     results = sample_evaluator.estimate_metrics(gt_path, gen_path)
     print(results)
 

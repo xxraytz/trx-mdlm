@@ -5,23 +5,24 @@ optuna:
     seed: 1
     direction: min
     target_metric: ${callbacks.checkpoint_monitor.monitor}
-    num_sanity_val_steps: 0
-
+    trial_overrides:
+      - trainer.max_steps=3000
+      
   suggestions:
     - ["optim.lr",                ["suggest_float", {low: 1.0e-5, high: 3.0e-3, log: true}]]
     - ["optim.weight_decay",      ["suggest_float", {low: 1.0e-12, high: 1.0e-2, log: true}]]
-    - ["lr_scheduler.num_warmup_steps", ["suggest_categorical", {choices: [100, 200, 500, 1000, 2500, 5000, 10000]}]]
+    - ["lr_scheduler.num_warmup_steps", ["suggest_categorical", {choices: [100, 200, 500, 1000]}]]
 
-
-    - ["training.ema", ["suggest_categorical", {choices: [0.0, 0.997, 0.999, 0.9999]}]]
+    - ["training.ema", ["suggest_categorical", {choices: [0.997, 0.999, 0.9999]}]]
 
     # # --- Архитектура (DiT) ---
-    # - ["model.hidden_size", ["suggest_categorical", {choices: [256, 512, 768, 1024]}]]
-    # - ["model.n_heads",     ["suggest_categorical", {choices: [6, 8, 12, 16]}]]
-    # - ["model.n_blocks",    ["suggest_categorical", {choices: [8, , 12, 16]}]]
-    # - ["model.dropout",     ["suggest_float", {low: 0.0, high: 0.3, log: false}]]
+    - ["model.hidden_size", ["suggest_categorical", {choices: [128, 256, 512, 768, 1024]}]]
+    - ["model.n_heads",     ["suggest_categorical", {choices: [4, 8, 16, 24]}]]
+    - ["model.n_blocks",    ["suggest_categorical", {choices: [4, 8, 10, 12, 16, 24]}]]
+    - ["model.cond_dim",    ["suggest_categorical", {choices: [32, 64, 128, 256]}]]
+    - ["model.dropout",     ["suggest_float", {low: 0.0, high: 0.3, log: false}]]
 
-    - ["model.name", ["suggest_categorical", {choices: ["tiny", "small", "medium"]}]]
+    # - ["model.name", ["suggest_categorical", {choices: ["tiny", "small", "medium"]}]]
 
     # --- Расписание шума (loglinear) ---
     - ["noise.sigma_min", ["suggest_float", {low: 1.0e-5, high: 1.0e-2, log: true}]]
@@ -29,7 +30,4 @@ optuna:
 
     # --- Сэмплирование t ---
     - ["training.sampling_eps", ["suggest_float", {low: 1.0e-4, high: 5.0e-2, log: true}]]
-
-    # Используй eval_batch_size отдельно, чтобы не менять валидацию при OOM на train
-    - ["loader.global_batch_size",      ["suggest_categorical", {choices: [32, 64, 128, 256]}]]
-    
+    - ["time_conditioning", ["suggest_categorical", {choices: [false, true]}]]

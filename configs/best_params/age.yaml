@@ -1,0 +1,13 @@
+model:
+    name: medium
+optim:
+    lr: 0.0009
+    weight_decay: 7.949331654011183e-06
+lr_scheduler:
+    num_warmup_steps: 200
+training:
+    ema: 0.999
+    sampling_eps: 0.00049936
+noise:
+    sigma_max: 57.6731
+    sigma_min: 0.0012469
