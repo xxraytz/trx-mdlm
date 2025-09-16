@@ -1,14 +1,14 @@
 defaults:
   - _self_
   - /callbacks: [checkpoint_every_n_steps, checkpoint_monitor, learning_rate_monitor]
-  - /data: alphabattle
+  - /data: age
   - /model: small
   - /strategy: ddp
   - /noise: loglinear
   - /lr_scheduler: constant_warmup
   - /metrics: default
-  - optuna
-  # - /best_params: age
+  # - /optuna: alphabattle_small
+  - /best_params: age
 
 mode: train  # train / ppl_eval / sample_eval
 diffusion: absorbing_state
@@ -77,7 +77,7 @@ trainer:
   log_every_n_steps: 10
   limit_train_batches: 1.0   # train on full dataset, can be used to toggle quick run
   limit_val_batches: 1.0     # validate on full dataset, can be used to toggle quick run
-  val_check_interval: 400
+  val_check_interval: 100
 
 wandb:
   project: text-diffusion

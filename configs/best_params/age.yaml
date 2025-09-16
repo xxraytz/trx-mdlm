@@ -1,13 +1,25 @@
+# @package _global_
 model:
-    name: medium
+    name: best
+    type: ddit
+    hidden_size: 768
+    cond_dim: 32
+    length: 1024
+    n_blocks: 10
+    n_heads: 24
+    scale_by_sigma: True
+    dropout: 0.0038618770646085265
+    tie_word_embeddings: False
+    use_flash_attention: True
 optim:
-    lr: 0.0009
-    weight_decay: 7.949331654011183e-06
+    lr: 0.00248068415370755
+    weight_decay: 1.3012582180654255e-11
 lr_scheduler:
-    num_warmup_steps: 200
+    num_warmup_steps: 500
 training:
-    ema: 0.999
-    sampling_eps: 0.00049936
+    ema: 0.997
+    sampling_eps: 0.005703147305585778
 noise:
-    sigma_max: 57.6731
-    sigma_min: 0.0012469
+    sigma_max: 59.21286744987937
+    sigma_min: 0.00046404440743915885
+time_conditioning: True

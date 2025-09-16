@@ -1,13 +1,25 @@
+# @package _global_
 model:
-    name: small
+    name: best
+    type: ddit
+    hidden_size: 512
+    cond_dim: 32
+    length: 512
+    n_blocks: 16
+    n_heads: 8
+    scale_by_sigma: True
+    dropout: 0.024155144658951064
+    tie_word_embeddings: False
+    use_flash_attention: True
 optim:
-    lr: 0.002363657
-    weight_decay: 6.156148197030368e-11
+    lr: 0.0012442154442128003
+    weight_decay: 0.000288383154322484
 lr_scheduler:
     num_warmup_steps: 200
 training:
     ema: 0.999
-    sampling_eps: 0.000591558
+    sampling_eps: 0.002071373701524171
 noise:
-    sigma_max: 8.78866281
-    sigma_min: 0.0005511336
+    sigma_max: 12.632879637799164
+    sigma_min: 0.0019401590773337179
+time_conditioning: True

@@ -203,7 +203,7 @@ def _eval_trx_metrics(config, logger):
 
     (_, _, test_ds), (internal_dataconf, data_conf) = get_dataloaders(data_conf, common_seed)
 
-    
+    # breakpoint()
     model = _load_from_checkpoint(config=(config, data_conf, internal_dataconf))
     if config.eval.disable_ema:
         logger.info("Disabling EMA.")
@@ -220,7 +220,7 @@ def _eval_trx_metrics(config, logger):
         gt.append(pad_to_len(tokens, config.model.length, 0))
         gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
         mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
-        if i >= 100:
+        if i >= 50:
             break
 
     mask = torch.cat(mask, dim=0)

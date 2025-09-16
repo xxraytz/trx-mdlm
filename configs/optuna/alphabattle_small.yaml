@@ -1,0 +1,51 @@
+params:
+  n_trials: 100
+  n_startup_trials: 10
+  seed: 1
+  direction: min
+  target_metric: ${callbacks.checkpoint_monitor.monitor}
+  trial_overrides:
+    - trainer.max_steps=3000
+    # - trainer.limit_train_batches=0.25
+    - trainer.val_check_interval=300
+    - data=alphabattle_small
+    - model.length=512
+      
+  pruner:
+    kind: median    # none | median | percentile | sha | hyperband | threshold
+    n_startup_trials: 10
+    n_warmup_steps: 5
+    interval_steps: 1
+    # для percentile:
+    percentile: 25
+    # для sha/hyperband:
+    min_resource: 1
+    reduction_factor: 3
+    min_early_stopping_rate: 0
+    # для threshold:
+    lower: null
+    upper: null
+      
+suggestions:
+  - ["optim.lr",                ["suggest_float", {low: 1.0e-5, high: 3.0e-3, log: true}]]
+  - ["optim.weight_decay",      ["suggest_float", {low: 1.0e-12, high: 1.0e-2, log: true}]]
+  - ["lr_scheduler.num_warmup_steps", ["suggest_categorical", {choices: [100, 200, 500, 1000]}]]
+
+  - ["training.ema", ["suggest_categorical", {choices: [0.997, 0.999, 0.9999]}]]
+
+  # # --- Архитектура (DiT) ---
+  - ["model.hidden_size", ["suggest_categorical", {choices: [128, 256, 512, 768, 1024]}]]
+  - ["model.n_heads",     ["suggest_categorical", {choices: [4, 8, 16, 24]}]]
+  - ["model.n_blocks",    ["suggest_categorical", {choices: [4, 8, 10, 12, 16, 24]}]]
+  - ["model.cond_dim",    ["suggest_categorical", {choices: [32, 64, 128, 256]}]]
+  - ["model.dropout",     ["suggest_float", {low: 0.0, high: 0.3, log: false}]]
+
+  # - ["model.name", ["suggest_categorical", {choices: ["tiny", "small", "medium"]}]]
+
+  # --- Расписание шума (loglinear) ---
+  - ["noise.sigma_min", ["suggest_float", {low: 1.0e-5, high: 1.0e-2, log: true}]]
+  - ["noise.sigma_max", ["suggest_float", {low: 5.0, high: 80.0, log: true}]]
+
+  # --- Сэмплирование t ---
+  - ["training.sampling_eps", ["suggest_float", {low: 1.0e-4, high: 5.0e-2, log: true}]]
+  - ["time_conditioning", ["suggest_categorical", {choices: [false, true]}]]

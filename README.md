@@ -250,7 +250,15 @@ model.length=256 \
 trainer.val_check_interval=100 \
 model.use_flash_attention=True
 ```
-
+#### To run optuna:
+```
+WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=0 python tools/run_optuna.py \
+--study-name shakespeare/final_01 \
+--storage sqlite:///optuna.db \
+--n-trials 200 \
+--n-jobs 1
+```
+Don't forget to check configs.
 ### Acknowledgements
 This repository was built off of [SEDD](https://github.com/louaaron/Score-Entropy-Discrete-Diffusion).
 

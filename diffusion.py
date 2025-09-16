@@ -796,6 +796,7 @@ class Diffusion(L.LightningModule):
 
     @torch.no_grad
     def generate_from_batch(self, batch, dt: float = 0.001):
+        # dt = 0.001
         x0 = batch["input_ids"].to(self.device).long()
         attn = batch["attention_mask"].to(self.device).long()
         B, L = x0.shape
@@ -825,6 +826,8 @@ class Diffusion(L.LightningModule):
         )
         return steps, tokens
 
+    
+    
     @torch.no_grad
     def sample_subs_guidance_for_batch(
         self,
@@ -834,6 +837,7 @@ class Diffusion(L.LightningModule):
         dt: float = 0.001,
         locked_mask=None,
     ):
+        # breakpoint()
         assert initial_tokens.ndim == 2, initial_tokens.shape
         B, L = initial_tokens.shape
 
@@ -871,22 +875,25 @@ class Diffusion(L.LightningModule):
                     p_x0_cache = None
                     sampling_steps += 1
                 x = x_next
+            # breakpoint()
+            # x_for_logits = x.clone()
+            # x_for_logits[~locked_mask] = self.mask_index
+            # logits = self.forward(x_for_logits, 0 * ones)
 
-            logits = self.forward(x, 0 * ones)
-            x_hat = logits.argmax(dim=-1)
+            # x_hat = logits.argmax(dim=-1)
 
             # сохраняем залоченные позиции неизменными
-            x = torch.where(locked_mask, x, x_hat)  # TODO: Check what is that?
+            # x = torch.where(locked_mask, x, x_hat)  # TODO: Check what is that?
 
-            pieces.append(x[:, :stride_length].detach().cpu().numpy())
+            # pieces.append(x[:, :stride_length].detach().cpu().numpy())
 
             target = x[:, stride_length:]
 
-        pieces.append(target.detach().cpu().numpy())
-        full = np.concatenate(pieces, axis=1)
-        tokens = torch.as_tensor(full, device=self.device, dtype=torch.long)
-        return sampling_steps, tokens
-
+        # pieces.append(target.detach().cpu().numpy())
+        # full = np.concatenate(pieces, axis=1)
+        # tokens = torch.as_tensor(full, device=self.device, dtype=torch.long)
+        return sampling_steps, x
+    
     @torch.no_grad
     def sample_subs_guidance(
         self, n_samples, stride_length, num_strides, dt=0.001, prefix_ids=None
@@ -927,7 +934,8 @@ class Diffusion(L.LightningModule):
                     p_x0_cache = None
                     sampling_steps += 1
                 x = x_next
-            logits = self.forward(x, 0 * ones)
+
+
             x_hat = logits.argmax(dim=-1)
 
             if locked_mask is not None:

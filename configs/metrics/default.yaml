@@ -3,6 +3,16 @@ evaluator:
   topk: 1
   temperature: 1.
   metrics:
+    - Levenshtein
+    - Accuracy:
+        first_k: 1
+    - Accuracy:
+        first_k: 3
+    - Accuracy:
+        first_k: 5
+    - Accuracy:
+        first_k: 10
+    - Accuracy
     - OTD
     - OTD:
         f1_average: micro

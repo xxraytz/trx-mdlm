@@ -1,0 +1,55 @@
+# @package _global_
+model:
+    name: best
+    type: ddit
+    hidden_size: 768
+    cond_dim: 64
+    length: 512
+    n_blocks: 16
+    n_heads: 24
+    scale_by_sigma: True
+    dropout: 0.20832004731832351
+    tie_word_embeddings: False
+    use_flash_attention: True
+optim:
+    lr: 0.000517444177709306
+    weight_decay: 1.4294083346067338e-09
+lr_scheduler:
+    num_warmup_steps: 200
+training:
+    ema: 0.997
+    sampling_eps: 0.0027949132012721877
+noise:
+    sigma_max: 5.742750687210148
+    sigma_min: 0.00017479854309911954
+
+time_conditioning: False
+
+
+# 
+
+# model:
+#     name: best
+#     type: ddit
+#     hidden_size: 1024
+#     cond_dim: 64
+#     length: 512
+#     n_blocks: 12
+#     n_heads: 8
+#     scale_by_sigma: True
+#     dropout: 0.05094912586937067
+#     tie_word_embeddings: False
+#     use_flash_attention: True
+# optim:
+#     lr: 0.00010789816816471728
+#     weight_decay: 1.5967794487583647e-05
+# lr_scheduler:
+#     num_warmup_steps: 200
+# training:
+#     ema: 0.9999
+#     sampling_eps: 0.0013694836399804529
+# noise:
+#     sigma_max: 6.567368600153997
+#     sigma_min: 0.004309506204261083
+
+# time_conditioning: False
