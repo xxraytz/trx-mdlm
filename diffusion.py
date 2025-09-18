@@ -75,11 +75,11 @@ class Diffusion(L.LightningModule):
         self.data_conf = data_conf
         self.vocab_size = data_conf.cat_cardinalities[data_conf.target_token]
         self.sampler = self.config.sampling.predictor
-
         self.antithetic_sampling = self.config.training.antithetic_sampling
         self.importance_sampling = self.config.training.importance_sampling
         self.change_of_variables = self.config.training.change_of_variables
-
+        self.gen_len = data_conf.generation_len
+        self.suffix_training = bool(getattr(self.config.training, "suffix_training", False))
         self.mask_index = self.vocab_size
         self.vocab_size += 1
 
@@ -266,6 +266,7 @@ class Diffusion(L.LightningModule):
         return sigma
 
     def forward(self, x, sigma):
+        breakpoint()
         """Returns log score."""
         sigma = self._process_sigma(sigma)
         with torch.autocast(device_type="cuda", dtype=torch.float32):
@@ -417,7 +418,7 @@ class Diffusion(L.LightningModule):
         }
         return [optimizer], [scheduler_dict]
 
-    def q_xt(self, x, move_chance):
+    def q_xt(self, x, move_chance, apply_mask: torch.BoolTensor = None):
         """Computes the noisy sample xt.
 
         Args:
@@ -426,6 +427,8 @@ class Diffusion(L.LightningModule):
           move_chance: float torch.Tensor with shape (batch_size, 1).
         """
         move_indices = torch.rand(*x.shape, device=x.device) < move_chance
+        if apply_mask is not None:
+            move_indices &= apply_mask
         xt = torch.where(move_indices, self.mask_index, x)
         return xt
 
@@ -688,6 +691,76 @@ class Diffusion(L.LightningModule):
             input=model_output_t0, dim=-1, index=x0[:, :, None]
         ).squeeze(-1)
 
+    def _build_suffix_mask(self, attention_mask: torch.Tensor, K: int):
+        # attention_mask: [B, L] (1 = valid token, 0 = padding): check it btw)
+        breakpoint()
+        _, L = attention_mask.shape
+        lengths = attention_mask.sum(dim=1)
+        hist_len = (lengths - K).clamp_min(0)
+        idx = torch.arange(L, device=attention_mask.device)[None, :]
+        valid = idx < lengths[:, None]
+        history = idx < hist_len[:, None]
+        target_mask = valid & (~history)
+        return target_mask
+
+    def _forward_pass_diffusion_suffix(self, x0: torch.LongTensor, target_mask: torch.BoolTensor):
+        breakpoint()
+        # 1) Choose t, compute sigma(t) and move_chance
+        t = self._sample_t(x0.shape[0], x0.device)
+        if self.T > 0:
+            t = (t * self.T).to(torch.int)
+            t = t / self.T
+            t += 1 / self.T
+        
+        if self.change_of_variables:
+            unet_conditioning = t[:, None]
+            f_T = torch.log1p(-torch.exp(-self.noise.sigma_max))
+            f_0 = torch.log1p(-torch.exp(-self.noise.sigma_min))
+            move_chance = torch.exp(f_0 + t * (f_T - f_0))[:, None]  # [B,1]
+        else:
+            sigma, dsigma = self.noise(t)
+            unet_conditioning = sigma[:, None]                        # [B,1]
+            move_chance = 1 - torch.exp(-sigma[:, None])              # [B,1]
+
+        xt = self.q_xt(x0, move_chance, apply_mask=target_mask)
+        model_output = self.forward(xt, unet_conditioning)
+        utils.print_nans(model_output, "model_output")
+
+        if self.parameterization == "sedd":
+            loss = dsigma[:, None] * self._score_entropy(
+                model_output, sigma[:, None], xt, x0
+            )
+
+        elif self.T > 0:
+            diffusion_loss = self._d3pm_loss(
+                model_output=model_output, xt=xt, x0=x0, t=t
+            )
+            if self.parameterization == "d3pm":
+                reconstruction_loss = self._reconstruction_loss(x0)
+            elif self.parameterization == "subs":
+                reconstruction_loss = 0
+            else:
+                reconstruction_loss = 0
+            loss = reconstruction_loss + diffusion_loss
+        else:
+            # SUBS parameterization, continuous time.
+            log_p_theta = torch.gather(
+                input=model_output, dim=-1, index=x0[:, :, None]
+            ).squeeze(-1)
+
+            if self.change_of_variables or self.importance_sampling:
+                loss = log_p_theta * torch.log1p(-torch.exp(-self.noise.sigma_min))
+            else:
+                loss = -log_p_theta * (dsigma / torch.expm1(sigma))[:, None]
+        breakpoint() # TODO: Check the following describtion and dimension of this tensor
+        if not torch.is_tensor(loss) or loss.ndim < 2:
+             # если в какой-то ветке loss скаляр — привести к [B,L]
+            # (у тебя везде по коду loss возвращается [B,L], так что обычно не понадобится)
+            pass
+
+        loss = loss * target_mask.to(loss.dtype)
+        return loss
+
     def _forward_pass_diffusion(self, x0):
         t = self._sample_t(x0.shape[0], x0.device)
         if self.T > 0:
@@ -744,16 +817,26 @@ class Diffusion(L.LightningModule):
         if self.parameterization == "ar":
             logprobs = self.backbone(input_tokens, None)
             loss = -logprobs.gather(-1, output_tokens[:, :, None])[:, :, 0]
+            token_mask = attention_mask
         else:
-            loss = self._forward_pass_diffusion(input_tokens)
+            if self.suffix_training:
+                K = int(self.gen_len)
+                target_mask = self._build_suffix_mask(attention_mask, K)
+                loss = self._forward_pass_diffusion_suffix(input_tokens, target_mask)
+                token_mask = target_mask.to(attention_mask.dtype)
+            else:
+                loss = self._forward_pass_diffusion(input_tokens)
+                token_mask = attention_mask
 
-        nlls = loss * attention_mask
-        count = attention_mask.sum()
+        nlls = loss * token_mask
+        # TODO: check why GPT suggest clamp_min(1): count = token_mask.sum().clamp_min(1)
+        breakpoint()
+        count = token_mask.sum()
 
         batch_nll = nlls.sum()
         token_nll = batch_nll / count
 
-        return Loss(loss=token_nll, nlls=nlls, token_mask=attention_mask)
+        return Loss(loss=token_nll, nlls=nlls, token_mask=token_mask)
 
     def _score_entropy(self, log_score, sigma, xt, x0):
         """Computes the SEDD loss.
@@ -935,7 +1018,7 @@ class Diffusion(L.LightningModule):
                     sampling_steps += 1
                 x = x_next
 
-
+            logits = self.forward(x, 0 * ones)
             x_hat = logits.argmax(dim=-1)
 
             if locked_mask is not None:

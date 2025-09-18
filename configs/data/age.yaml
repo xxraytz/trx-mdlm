@@ -14,9 +14,9 @@ num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: small_group
-test_path: /workspace/dev/transaction-generation/data/age/preprocessed/test
+test_path: /home/dev/2025/transaction-generation/data/age/preprocessed/test
 time_name: trans_date
-train_path: /workspace/dev/transaction-generation/data/age/preprocessed/train
+train_path: /home/dev/2025/transaction-generation/data/age/preprocessed/train
 train_random_end: none
 train_resamples: 1
 train_transforms:

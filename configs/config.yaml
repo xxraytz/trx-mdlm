@@ -46,6 +46,7 @@ training:
   importance_sampling: False
   sampling_eps: 1e-3
   change_of_variables: False
+  suffix_training: True
 
 eval:
   checkpoint_path: ''  # Used to evaluate a checkpoint after training.
