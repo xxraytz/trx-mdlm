@@ -266,7 +266,6 @@ class Diffusion(L.LightningModule):
         return sigma
 
     def forward(self, x, sigma):
-        breakpoint()
         """Returns log score."""
         sigma = self._process_sigma(sigma)
         with torch.autocast(device_type="cuda", dtype=torch.float32):
@@ -693,7 +692,6 @@ class Diffusion(L.LightningModule):
 
     def _build_suffix_mask(self, attention_mask: torch.Tensor, K: int):
         # attention_mask: [B, L] (1 = valid token, 0 = padding): check it btw)
-        breakpoint()
         _, L = attention_mask.shape
         lengths = attention_mask.sum(dim=1)
         hist_len = (lengths - K).clamp_min(0)
@@ -704,7 +702,6 @@ class Diffusion(L.LightningModule):
         return target_mask
 
     def _forward_pass_diffusion_suffix(self, x0: torch.LongTensor, target_mask: torch.BoolTensor):
-        breakpoint()
         # 1) Choose t, compute sigma(t) and move_chance
         t = self._sample_t(x0.shape[0], x0.device)
         if self.T > 0:
@@ -752,7 +749,7 @@ class Diffusion(L.LightningModule):
                 loss = log_p_theta * torch.log1p(-torch.exp(-self.noise.sigma_min))
             else:
                 loss = -log_p_theta * (dsigma / torch.expm1(sigma))[:, None]
-        breakpoint() # TODO: Check the following describtion and dimension of this tensor
+
         if not torch.is_tensor(loss) or loss.ndim < 2:
              # если в какой-то ветке loss скаляр — привести к [B,L]
             # (у тебя везде по коду loss возвращается [B,L], так что обычно не понадобится)
@@ -829,9 +826,9 @@ class Diffusion(L.LightningModule):
                 token_mask = attention_mask
 
         nlls = loss * token_mask
-        # TODO: check why GPT suggest clamp_min(1): count = token_mask.sum().clamp_min(1)
-        breakpoint()
+
         count = token_mask.sum()
+        assert count.item() > 0, "Empty token_mask in train: check dataloader/attention_mask/suffix setup"
 
         batch_nll = nlls.sum()
         token_nll = batch_nll / count
@@ -920,7 +917,6 @@ class Diffusion(L.LightningModule):
         dt: float = 0.001,
         locked_mask=None,
     ):
-        # breakpoint()
         assert initial_tokens.ndim == 2, initial_tokens.shape
         B, L = initial_tokens.shape
 
