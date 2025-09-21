@@ -1,0 +1,25 @@
+# @package _global_
+model:
+    name: best
+    type: ddit
+    hidden_size: 512
+    cond_dim: 256
+    length: 1024
+    n_blocks: 16
+    n_heads: 8
+    scale_by_sigma: True
+    dropout: 0.04703741839382528
+    tie_word_embeddings: False
+    use_flash_attention: True
+optim:
+    lr: 0.000998383591783506
+    weight_decay: 7.561473607549182e-09
+lr_scheduler:
+    num_warmup_steps: 100
+training:
+    ema: 0.999
+    sampling_eps: 0.002054143909425012
+noise:
+    sigma_max: 6.07134716347942
+    sigma_min: 1.1369165971575194e-05
+time_conditioning: False

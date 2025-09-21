@@ -3,25 +3,24 @@ model:
     name: best
     type: ddit
     hidden_size: 512
-    cond_dim: 256
-    extra_cond_dim: 260 #| AR: 260, ONESHOT: 192
-    extra_cond_merge: sum # sum | mlp_concat
+    cond_dim: 32
     length: 512
-    n_blocks: 16
+    n_blocks: 8
     n_heads: 8
     scale_by_sigma: True
-    dropout: 0.024155144658951064
+    dropout: 0.031369669383749146
     tie_word_embeddings: False
     use_flash_attention: True
 optim:
-    lr: 0.0012442154442128003
-    weight_decay: 0.000288383154322484
+    lr: 0.0017241088005972192
+    weight_decay: 2.1460700323791962e-12
 lr_scheduler:
     num_warmup_steps: 200
 training:
-    ema: 0.999
-    sampling_eps: 0.002071373701524171
+    ema: 0.9999
+    sampling_eps: 0.01676393673065006
 noise:
-    sigma_max: 12.632879637799164
-    sigma_min: 0.0019401590773337179
+    sigma_max: 64.89908574568689
+    sigma_min: 0.002558970235401298
 time_conditioning: True
+
