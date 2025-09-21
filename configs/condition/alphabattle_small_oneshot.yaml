@@ -1,0 +1,24 @@
+model:
+  name: OneShotGenerator
+  latent_encoder:
+    name: GRU
+    params:
+      hidden_size: 256
+      num_layers: 4
+      input_size: -1
+  autoencoder:
+    name: BaselineAE
+    params:
+      cat_emb_dim: 32
+      num_emb_dim: 32
+      num_norm: true
+      use_time: true
+    pretrain: false
+    frozen: false
+    checkpoint: null
+    batch_transforms: null
+  pooler: last
+  params: null
+
+
+path_to_ckpt: "/home/dev/2025/transaction-generation/log/generation/alphabattle_small/debug/-(14)/seed_0/ckpt/epoch__0001_-_loss__-169.9.ckpt"
