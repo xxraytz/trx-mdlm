@@ -1,20 +1,22 @@
 defaults:
   - _self_
   - /callbacks: [checkpoint_every_n_steps, checkpoint_monitor, learning_rate_monitor]
-  - /data: age
+  - /data: alphabattle_small
   - /model: small
   - /strategy: ddp
   - /noise: loglinear
   - /lr_scheduler: constant_warmup
   - /metrics: default
   # - /optuna: alphabattle_small
-  - /best_params: age
+  - /best_params: alphabattle_small
+  - /condition: alphabattle_small
 
 mode: train  # train / ppl_eval / sample_eval
 diffusion: absorbing_state
 backbone: dit  # dit / dimamba / ar
 parameterization: subs  # subs / d3pm / sedd
-time_conditioning: False
+time_conditioning: True
+embedding_conditioning: True
 T: 0  # 0 (continuous time) / 1000
 subs_masking: False
 
@@ -46,7 +48,8 @@ training:
   importance_sampling: False
   sampling_eps: 1e-3
   change_of_variables: False
-  suffix_training: True
+  suffix_training: False
+  cond_drop_prob: 0.
 
 eval:
   checkpoint_path: ''  # Used to evaluate a checkpoint after training.
@@ -70,7 +73,7 @@ trainer:
   num_nodes: 1
   devices: ${device_count:}
   # accumulate_grad_batches: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${loader.batch_size} * ${trainer.num_nodes}}}
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   gradient_clip_val: 1.0
   # precision: '32-true'
   num_sanity_val_steps: 2

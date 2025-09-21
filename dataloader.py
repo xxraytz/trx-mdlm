@@ -292,6 +292,7 @@ def get_text8_dataset(cache_dir, max_seq_length=256, drop_last=True, crop_train=
 
 
 def _group_texts(examples, block_size, bos, eos):
+    raise NotImplementedError()
     # Concatenate all texts.
     concatenated_examples = list(itertools.chain(*examples["input_ids"]))
     total_length = len(concatenated_examples)
@@ -324,6 +325,7 @@ def get_dataset(
     num_proc=len(os.sched_getaffinity(0)),
     streaming=False,
 ):
+    raise NotImplementedError()
     if wrap:
         filename = f"{dataset_name}_{mode}_bs{block_size}_wrapped.dat"
     else:
@@ -417,6 +419,7 @@ def get_dataset(
         detokenizer = None
 
     def _apply_detokenizer(detokenizer):
+        raise NotImplementedError()
         def detok(text):
             for i, t in enumerate(text, 0):
                 text[i] = detokenizer(t)
@@ -510,6 +513,7 @@ def get_dataset(
 
 
 def get_tokenizer(config):
+    raise NotImplementedError()
     if config.data.tokenizer_name_or_path == "text8":
         tokenizer = Text8Tokenizer()
     elif config.data.tokenizer_name_or_path == "bert-base-uncased":
@@ -565,8 +569,9 @@ class MDLMAdapter:
     feature_name: str
 
     def __call__(self, batch) -> dict:
-        attention_mask = (batch[self.feature_name] != 0).long()
+        attention_mask = (batch[self.feature_name] != 0).long() #TODO: Do it based on lengths
         return {
+            "orig_batch": batch,
             "input_ids": batch[self.feature_name].T,
             "attention_mask": attention_mask.T,
         }
@@ -574,7 +579,7 @@ class MDLMAdapter:
 
 def get_collator(data_conf, tfs, return_orig=False):
     # temporary:
-    return_orig = False
+    return_orig = False #TODO: check return orig
     seq_collator = get_seq_collator(data_conf, tfs, return_orig)
     mdlm_adapter = MDLMAdapter(feature_name=data_conf.target_token)
     collate_fn = PipelineCollator(seq_collator, mdlm_adapter)

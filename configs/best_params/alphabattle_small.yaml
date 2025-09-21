@@ -3,7 +3,9 @@ model:
     name: best
     type: ddit
     hidden_size: 512
-    cond_dim: 32
+    cond_dim: 256
+    extra_cond_dim: 260
+    extra_cond_merge: sum # sum | mlp_concat
     length: 512
     n_blocks: 16
     n_heads: 8

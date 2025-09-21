@@ -1,24 +1,25 @@
-batch_size: 32
-cat_cardinalities:
-  mcc_category: 28
 dataset_name: alphabattle_small
-drop_nonfocus: true
-focus_on:
-- mcc_category
+train_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/train
+test_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/test
+batch_size: 32
+num_workers: 4
+val_ratio: 0.15
+train_resamples: 1
+max_seq_len: 350
+min_history_len: 32
 generation_len: 32
+train_random_end: none
+val_random_end: time
+time_name: hours_since_first_tx
+cat_cardinalities:
+  payment_system: 7
+  mcc_category: 28
+  card_type: 166
+  mcc: 109
+num_names:
+- amnt
 index_name: app_id
 loader_transforms: null
-max_seq_len: 512
-min_history_len: 32
-num_names: null
-num_workers: 4
-padding_value: 0.0
-target_token: mcc_category
-test_path: /workspace/dev/transaction-generation/data/alphabattle-100k/test
-time_name: hours_since_first_tx
-train_path: /workspace/dev/transaction-generation/data/alphabattle-100k/train
-train_random_end: none
-train_resamples: 1
 train_transforms:
   '0':
     RescaleTime:
@@ -27,14 +28,12 @@ train_transforms:
   '1':
     TimeToDiff:
       disable: true
-  '3':
-    CutTargetSequence:
-      target_len: 0
   local_shuffle:
     LocalShuffle:
       max_shift: 0
-val_random_end: time
-val_ratio: 0.15
+  '3':
+    CutTargetSequence:
+      target_len: 0
 val_transforms:
   '0':
     RescaleTime:
@@ -45,4 +44,14 @@ val_transforms:
       disable: true
   '3':
     CutTargetSequence:
-      target_len: 0
+      target_len: 32
+padding_value: 0.0
+focus_on:
+- hours_since_first_tx
+- payment_system
+- mcc_category
+- card_type
+- mcc
+- amnt
+drop_nonfocus: false
+target_token: mcc_category

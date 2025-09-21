@@ -1,0 +1,27 @@
+model:
+  name: AutoregressiveGenerator
+  latent_encoder:
+    name: GRU
+    params:
+      hidden_size: 231
+      num_layers: 2
+      dropout: 0.13991417740526868
+      input_size: -1
+  autoencoder:
+    name: BaselineAE
+    params:
+      num_norm: false
+      cat_emb_dim: 41
+      num_emb_dim: 48
+      use_time: true
+    pretrain: false
+    frozen: false
+    checkpoint: null
+    batch_transforms:
+      set_features: Identity
+  pooler: last
+  params: null
+
+
+
+path_to_ckpt: "/home/dev/2025/transaction-generation/log/generation/alphabattle_small/optuna/gru/22/22/seed_0/ckpt/epoch__0111_-_loss__-1.657.ckpt"
