@@ -1,4 +1,6 @@
 dataset_name: mbd
+# /workspace/dev/transaction-generation/
+# /home/dev/2025/transaction-generation/
 train_path: /home/dev/2025/transaction-generation/data/mbd-50k/train
 test_path: /home/dev/2025/transaction-generation/data/mbd-50k/test
 batch_size: 64

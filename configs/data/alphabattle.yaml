@@ -14,6 +14,8 @@ num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: mcc_category
+# /workspace/dev/transaction-generation/
+# /home/dev/2025/transaction-generation/
 test_path: /workspace/dev/transaction-generation/data/alphabattle-full/test
 time_name: hours_since_first_tx
 train_path: /workspace/dev/transaction-generation/data/alphabattle-full/train

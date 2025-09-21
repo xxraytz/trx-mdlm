@@ -5,14 +5,14 @@ params:
   direction: min
   target_metric: ${callbacks.checkpoint_monitor.monitor}
   trial_overrides:
-    - trainer.max_steps=1200
+    - trainer.max_steps=2000
     # - trainer.limit_train_batches=0.25
     - trainer.val_check_interval=100
     - data=age
     - model.length=1024
       
   pruner:
-    kind: none    # none | median | percentile | sha | hyperband | threshold
+    kind: median    # none | median | percentile | sha | hyperband | threshold
     n_startup_trials: 10
     n_warmup_steps: 5
     interval_steps: 1

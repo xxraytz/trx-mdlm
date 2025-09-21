@@ -1,4 +1,6 @@
 dataset_name: alphabattle_small
+# /workspace/dev/transaction-generation/
+# /home/dev/2025/transaction-generation/
 train_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/train
 test_path: /home/dev/2025/transaction-generation/data/alphabattle-100k/test
 batch_size: 32

@@ -21,9 +21,9 @@ evaluator:
         average: macro
     - F1Score:
         average: micro
-    - Detection:
-        condition_len: 32
-        verbose: True
+    # - Detection:
+    #     condition_len: 32
+    #     verbose: True
     # - Density:
     #     log_cols: ["amount_rur"]
     #     with_timediff: True

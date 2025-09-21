@@ -1,4 +1,4 @@
-batch_size: 8
+batch_size: 128
 cat_cardinalities:
   small_group: 203
 dataset_name: age
@@ -14,9 +14,11 @@ num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: small_group
+# /workspace/dev/transaction-generation/
+# /home/dev/2025/transaction-generation/
 test_path: /home/dev/2025/transaction-generation/data/age/preprocessed/test
-time_name: trans_date
 train_path: /home/dev/2025/transaction-generation/data/age/preprocessed/train
+time_name: trans_date
 train_random_end: none
 train_resamples: 1
 train_transforms:

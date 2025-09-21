@@ -217,8 +217,8 @@ def _eval_trx_metrics(config, logger):
         _, tokens = model.generate_from_batch(
             batch, dt=float(getattr(config.sampling, "dt", 0.01))
         )
-        gt.append(pad_to_len(tokens, config.model.length, 0))
-        gen.append(pad_to_len(batch["input_ids"], config.model.length, 0))
+        gt.append(pad_to_len(batch["input_ids"], config.model.length, 0))
+        gen.append(pad_to_len(tokens, config.model.length, 0))
         mask.append(pad_to_len(batch["attention_mask"], config.model.length, 0))
         if i >= 50:
             break

@@ -14,9 +14,11 @@ num_names: null
 num_workers: 4
 padding_value: 0.0
 target_token: char
+# /workspace/dev/transaction-generation/
+# /home/dev/2025/transaction-generation/
 test_path: /workspace/dev/transaction-generation/data/shakespeare/preprocessed/test
-time_name: char_number
 train_path: /workspace/dev/transaction-generation/data/shakespeare/preprocessed/train
+time_name: char_number
 train_random_end: none
 train_resamples: 5
 train_transforms:
